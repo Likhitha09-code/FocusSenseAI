@@ -119,6 +119,8 @@ class BehaviourAnalysisResponse(BaseModel):
     counterfactual_baseline: dict[str, Any] | None = None
     model_version: str
     analyzed_at: datetime
+    session_started_at: datetime | None = None
+    subject_name: str | None = None
 
 
 # ---------------------------------------------------------------------------

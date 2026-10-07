@@ -14,7 +14,7 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models.entities import Parent, StudyActivity, StudySession, Student
+from app.models.entities import Parent, StudyActivity, StudySession, Student, Subject
 from app.services import ml_service, student_service, supabase
 from ml.data.generate_dataset import generate_synthetic_dataset
 from ml.features.feature_pipeline import (
@@ -206,4 +206,92 @@ def test_successful_real_data_ml_inference(
         headers={"Authorization": "Bearer parent-token"},
     )
     assert parent_resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+# ---------------------------------------------------------------------------
+# 4. Task 12 Student Insight Flow & Linking Tests
+# ---------------------------------------------------------------------------
+def test_task12_behaviour_insight_flow_linking_and_empty_states(
+    client: TestClient,
+    student_a: tuple[Student, uuid.UUID],
+    student_b: tuple[Student, uuid.UUID],
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    stu_a, auth_a = student_a
+    stu_b, auth_b = student_b
+
+    # 1. Student B with no sessions returns empty list (no fake prediction created)
+    setup_token_mock(monkeypatch, auth_b)
+    resp_empty = client.get(
+        "/api/v1/student/behaviour",
+        headers={"Authorization": "Bearer token-b"},
+    )
+    assert resp_empty.status_code == status.HTTP_200_OK
+    assert resp_empty.json() == []
+
+    # 2. Student A creates session with subject and activity telemetry
+    setup_token_mock(monkeypatch, auth_a)
+    subject = Subject(
+        id=uuid.uuid4(),
+        student_id=stu_a.id,
+        name="Algorithms",
+    )
+    db_session.add(subject)
+    db_session.commit()
+    session = StudySession(
+        id=uuid.uuid4(),
+        student_id=stu_a.id,
+        subject_id=subject.id,
+        started_at=datetime.now(timezone.utc),
+        status="completed",
+    )
+    db_session.add(session)
+    db_session.commit()
+
+    activity = StudyActivity(
+        id=uuid.uuid4(),
+        study_session_id=session.id,
+        activity_type="productive",
+        occurred_at=datetime.now(timezone.utc),
+        numeric_value=1800.0,
+        metadata_json={"application_name": "PyCharm"},
+    )
+    db_session.add(activity)
+    db_session.commit()
+
+    # 3. Generate analysis
+    analysis = student_service.generate_session_behaviour_analysis(session.id, stu_a.id, db_session)
+
+    # 4. Retrieve latest analysis via API
+    resp = client.get(
+        "/api/v1/student/behaviour",
+        headers={"Authorization": "Bearer token-a"},
+    )
+    assert resp.status_code == status.HTTP_200_OK
+    items = resp.json()
+    assert len(items) == 1
+    latest = items[0]
+
+    # Verify session-to-analysis linking fields
+    assert latest["study_session_id"] == str(session.id)
+    assert latest["subject_name"] == "Algorithms"
+    assert latest["session_started_at"] is not None
+
+    # Verify Observed Telemetry Metrics
+    snapshot = latest["feature_snapshot"]
+    assert snapshot["total_session_duration"] == 1800.0
+    assert snapshot["productive_duration"] == 1800.0
+    assert snapshot["productive_activity_ratio"] == 1.0
+    assert snapshot["distraction_activity_ratio"] == 0.0
+    assert snapshot["activity_count"] == 1
+    assert snapshot["quiz_score"] is None  # Missing quiz score handled cleanly via None/Imputation
+
+    # Verify AI Predictions
+    assert 0.0 <= latest["focus_score"] <= 100.0
+    assert latest["distraction_level"] in ("LOW", "MEDIUM", "HIGH")
+    assert 0.0 <= latest["performance_prediction"] <= 100.0
+    assert latest["model_version"] == "v1.0"
+    assert latest["analyzed_at"] is not None
+
 

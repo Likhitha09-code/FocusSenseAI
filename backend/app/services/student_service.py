@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.entities import (
     BehaviouralAnalysis,
@@ -570,6 +570,7 @@ def list_behavioural_analyses(
 
     items = db.scalars(
         select(BehaviouralAnalysis)
+        .options(joinedload(BehaviouralAnalysis.study_session).joinedload(StudySession.subject))
         .join(StudySession, BehaviouralAnalysis.study_session_id == StudySession.id)
         .where(StudySession.student_id == student_id)
         .order_by(BehaviouralAnalysis.analyzed_at.desc())
@@ -584,6 +585,7 @@ def get_behavioural_analysis(
 ) -> BehaviouralAnalysis:
     analysis = db.scalar(
         select(BehaviouralAnalysis)
+        .options(joinedload(BehaviouralAnalysis.study_session).joinedload(StudySession.subject))
         .join(StudySession, BehaviouralAnalysis.study_session_id == StudySession.id)
         .where(
             BehaviouralAnalysis.id == analysis_id,

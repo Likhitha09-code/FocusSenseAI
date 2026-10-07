@@ -125,4 +125,13 @@ Task 11 implements the scikit-learn ML inference pipeline for FocusSense AI:
 4. **Target Leakage Prevention**: Input feature set (`FEATURE_NAMES`) is strictly separated from target outputs (`focus_score`, `distraction_level`, `performance_score`). Verified via unit test suite (`verify_no_target_leakage()`).
 5. **Synthetic Development Disclaimer**: Initial models are trained on a reproducible 10,000-session synthetic dataset (`random_state=42`) for offline benchmarking. Models are clearly labeled as development initial models in API responses (`model_version: "v1.0"`).
 
+## Behaviour Analysis Integration & Student Insight Flow (Task 12)
+
+Task 12 integrates the Task 11 ML inference pipeline into a student-facing insight flow:
+
+1. **Session-to-Analysis Linking**: Each `BehaviouralAnalysis` is linked directly to its source `StudySession` (including `session_started_at` and `subject_name`), preventing record duplication and enabling clear tracking.
+2. **Clear Separation of Telemetry vs Predictions**: The UI strictly separates observed telemetry measurements (productive/distraction time, switch frequency, app counts) from AI model predictions (focus score, distraction rating, performance prediction).
+3. **Empty & Error Handling**: Gracefully handles unanalyzed sessions, zero activity telemetry, and missing quiz data without generating fake scores.
+4. **Student Privacy Isolation**: Enforces student ownership at the DB query level using `StudySession.student_id == current_user.student_id`, rejecting cross-student access ($404$) and unauthorized parent roles ($403$).
+
 

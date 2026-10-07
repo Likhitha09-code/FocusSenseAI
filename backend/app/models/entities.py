@@ -75,6 +75,7 @@ class StudySession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     student: Mapped[Student] = relationship(back_populates="study_sessions")
+    subject: Mapped["Subject | None"] = relationship()
     activities: Mapped[list["StudyActivity"]] = relationship(back_populates="study_session")
     behavioural_analysis: Mapped["BehaviouralAnalysis | None"] = relationship(back_populates="study_session")
 
@@ -138,8 +139,17 @@ class BehaviouralAnalysis(Base):
     counterfactual_baseline: Mapped[dict[str, Any] | None] = mapped_column(JSON_TYPE)
     model_version: Mapped[str] = mapped_column(String(100))
     analyzed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
     study_session: Mapped[StudySession] = relationship(back_populates="behavioural_analysis")
+
+    @property
+    def session_started_at(self) -> datetime | None:
+        return self.study_session.started_at if self.study_session else None
+
+    @property
+    def subject_name(self) -> str | None:
+        if self.study_session and self.study_session.subject:
+            return self.study_session.subject.name
+        return None
 
 
 class Recommendation(Base):
