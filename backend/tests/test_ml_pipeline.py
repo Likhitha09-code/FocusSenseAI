@@ -295,3 +295,53 @@ def test_task12_behaviour_insight_flow_linking_and_empty_states(
     assert latest["analyzed_at"] is not None
 
 
+# ---------------------------------------------------------------------------
+# 5. Task 13 Focus & Distraction Scoring Pipeline Tests
+# ---------------------------------------------------------------------------
+def test_task13_focus_and_distraction_scoring(monkeypatch: pytest.MonkeyPatch):
+    # 1. Extreme input feature vectors test safe focus score clipping (0.0 to 100.0)
+    high_prod_sample = {
+        "total_session_duration": 14400.0,
+        "productive_duration": 14400.0,
+        "distraction_duration": 0.0,
+        "break_duration": 0.0,
+        "productive_activity_ratio": 1.0,
+        "distraction_activity_ratio": 0.0,
+        "activity_switch_count": 0,
+        "activity_count": 5,
+        "unique_application_count": 1,
+        "quiz_score": 100.0,
+    }
+    res_high = ml_service.predict_behaviour(high_prod_sample)
+    assert 0.0 <= res_high["focus_score"] <= 100.0
+    assert res_high["distraction_level"] in ("LOW", "MEDIUM", "HIGH")
+
+    low_prod_sample = {
+        "total_session_duration": 14400.0,
+        "productive_duration": 0.0,
+        "distraction_duration": 14400.0,
+        "break_duration": 0.0,
+        "productive_activity_ratio": 0.0,
+        "distraction_activity_ratio": 1.0,
+        "activity_switch_count": 50,
+        "activity_count": 50,
+        "unique_application_count": 15,
+        "quiz_score": 0.0,
+    }
+    res_low = ml_service.predict_behaviour(low_prod_sample)
+    assert 0.0 <= res_low["focus_score"] <= 100.0
+    assert res_low["distraction_level"] in ("LOW", "MEDIUM", "HIGH")
+
+    # 2. Verify explicit error when distraction classifier predicts an unexpected class
+    def mock_invalid_predict(X):
+        return np.array(["EXTREME_DISTRACTION"])
+
+    artifacts = ml_service.load_ml_artifacts()
+    monkeypatch.setattr(artifacts["distraction_model"], "predict", mock_invalid_predict)
+
+    with pytest.raises(ValueError) as exc_info:
+        ml_service.predict_behaviour(high_prod_sample)
+    assert "Invalid distraction class predicted: EXTREME_DISTRACTION" in str(exc_info.value)
+
+
+

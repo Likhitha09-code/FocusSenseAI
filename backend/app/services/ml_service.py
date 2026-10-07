@@ -98,7 +98,7 @@ def predict_behaviour(raw_features: dict[str, Any]) -> dict[str, Any]:
     # 2. Distraction Level Classification (LOW, MEDIUM, HIGH)
     distraction_level = str(distraction_model.predict(X_scaled)[0])
     if distraction_level not in ("LOW", "MEDIUM", "HIGH"):
-        distraction_level = "MEDIUM"
+        raise ValueError(f"Invalid distraction class predicted: {distraction_level}")
 
     # 3. Performance Score Regression (Clipped 0-100)
     raw_perf = float(performance_model.predict(X_scaled)[0])

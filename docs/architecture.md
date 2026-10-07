@@ -134,4 +134,13 @@ Task 12 integrates the Task 11 ML inference pipeline into a student-facing insig
 3. **Empty & Error Handling**: Gracefully handles unanalyzed sessions, zero activity telemetry, and missing quiz data without generating fake scores.
 4. **Student Privacy Isolation**: Enforces student ownership at the DB query level using `StudySession.student_id == current_user.student_id`, rejecting cross-student access ($404$) and unauthorized parent roles ($403$).
 
+## Focus & Distraction Scoring (Task 13)
+
+Task 13 implements a clean student-facing Focus and Distraction scoring presentation layer:
+
+1. **Focus Score Bounding**: `focus_score` predicted by the existing `RandomForestRegressor` is safely bounded to $[0.0, 100.0]$ at the inference layer (`ml_service.py`) via `np.clip(raw_focus, 0.0, 100.0)`.
+2. **Explicit Distraction Class Validation**: Distraction levels remain strictly `LOW`, `MEDIUM`, or `HIGH`. If an unexpected class string is produced, `ml_service.py` raises an explicit `ValueError` rather than masking the issue.
+3. **Model Reuse**: Reuses existing Task 11 model artifacts (`focus_regressor.joblib` & `distraction_classifier.joblib`) without retraining or modifying model weights.
+4. **Real-Data Gate Preservation**: Inference runs strictly when `activity_count >= 1` and `total_duration_seconds > 0.0`, preventing fake score generation for empty sessions.
+
 
