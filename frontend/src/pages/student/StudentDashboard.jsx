@@ -147,7 +147,7 @@ export function StudentDashboard() {
                 icon={TrendingUp}
                 value={perfVal}
                 status={perfVal ? "AI Regressor Estimate" : "No assessment yet"}
-                description="AI Regressor prediction correlated across quiz outcomes and focus ratio."
+                description="AI Regressor estimate derived from session telemetry and quiz baseline."
               />
             </div>
           </section>

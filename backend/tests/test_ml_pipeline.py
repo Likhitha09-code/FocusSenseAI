@@ -344,4 +344,87 @@ def test_task13_focus_and_distraction_scoring(monkeypatch: pytest.MonkeyPatch):
     assert "Invalid distraction class predicted: EXTREME_DISTRACTION" in str(exc_info.value)
 
 
+# ---------------------------------------------------------------------------
+# 6. Task 14 Performance Prediction & Analysis Tests
+# ---------------------------------------------------------------------------
+def test_task14_performance_prediction_analysis(
+    client: TestClient,
+    student_a: tuple[Student, uuid.UUID],
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    stu_a, auth_a = student_a
+    setup_token_mock(monkeypatch, auth_a)
+
+    # 1. Extreme feature inputs safely bound performance prediction in [0.0, 100.0]
+    sample_feat = {
+        "total_session_duration": 7200.0,
+        "productive_duration": 6000.0,
+        "distraction_duration": 600.0,
+        "break_duration": 600.0,
+        "productive_activity_ratio": 0.8333,
+        "distraction_activity_ratio": 0.0833,
+        "activity_switch_count": 3,
+        "activity_count": 8,
+        "unique_application_count": 3,
+        "quiz_score": None,  # Test median imputation safeguard
+    }
+    prediction_result = ml_service.predict_behaviour(sample_feat)
+    assert "performance_prediction" in prediction_result
+    assert 0.0 <= prediction_result["performance_prediction"] <= 100.0
+
+    # 2. Verify distinction between AI predicted performance score and actual measured report score
+    session = StudySession(
+        id=uuid.uuid4(),
+        student_id=stu_a.id,
+        started_at=datetime.now(timezone.utc),
+        status="completed",
+    )
+    db_session.add(session)
+    db_session.commit()
+
+    activity = StudyActivity(
+        id=uuid.uuid4(),
+        study_session_id=session.id,
+        activity_type="productive",
+        occurred_at=datetime.now(timezone.utc),
+        numeric_value=3600.0,
+        metadata_json={"application_name": "IDE"},
+    )
+    db_session.add(activity)
+    db_session.commit()
+
+    # Generate analysis
+    analysis = student_service.generate_session_behaviour_analysis(session.id, stu_a.id, db_session)
+
+    # Add actual academic report record
+    from app.models.entities import PerformanceReport
+    report = PerformanceReport(
+        id=uuid.uuid4(),
+        student_id=stu_a.id,
+        study_session_id=session.id,
+        score=92.5,
+        max_score=100.0,
+        performance_metric="Midterm Quiz",
+        measured_at=datetime.now(timezone.utc),
+    )
+    db_session.add(report)
+    db_session.commit()
+
+    # Retrieve performance endpoint response
+    resp = client.get(
+        "/api/v1/student/performance",
+        headers={"Authorization": "Bearer token-a"},
+    )
+    assert resp.status_code == status.HTTP_200_OK
+    reports_data = resp.json()
+    assert len(reports_data) >= 1
+    actual_report = reports_data[0]
+
+    # Confirm explicit separation between ML estimate and actual grade
+    assert actual_report["score"] == 92.5
+    assert actual_report["score"] != analysis.performance_prediction
+
+
+
 

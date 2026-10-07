@@ -59,17 +59,60 @@ export function Performance() {
             icon={Brain}
           >
             {latestAnalysis && latestAnalysis.performance_prediction !== null ? (
-              <div className="rounded-xl border border-[#17221c]/15 bg-[#fbf9f4] p-6 text-center">
-                <span className="font-mono text-xs font-bold text-[#4e6656] uppercase tracking-wider">
-                  AI Model Prediction
-                </span>
-                <div className="mt-2 font-serif text-4xl font-extrabold text-[#17221c]">
-                  {latestAnalysis.performance_prediction}%
+              <div className="rounded-xl border border-[#17221c]/15 bg-[#fbf9f4] p-6 text-center space-y-4">
+                <div>
+                  <span className="inline-block rounded-full bg-[#4e6656]/10 px-3 py-1 font-mono text-xs font-bold text-[#4e6656] uppercase tracking-wider">
+                    AI MODEL PREDICTION
+                  </span>
+                  <div className="mt-2 font-serif text-4xl font-extrabold text-[#17221c]">
+                    {latestAnalysis.performance_prediction}%
+                  </div>
+                  <p className="mt-1 text-xs text-[#405047] max-w-md mx-auto">
+                    Estimated academic performance capacity based on your session telemetry and historical quiz baseline.
+                  </p>
                 </div>
-                <p className="mt-2 text-xs text-[#405047] max-w-md mx-auto">
-                  Estimated academic performance capacity based on your session focus ratio, context switching telemetry, and historical quiz baseline.
-                </p>
-                <div className="mt-4 inline-flex items-center gap-2 rounded-md bg-[#17221c] px-3 py-1 font-mono text-[11px] font-bold text-[#f5f1e8] uppercase">
+
+                {/* Observed Telemetry Inputs Used by Model */}
+                {latestAnalysis.feature_snapshot && (
+                  <div className="rounded-lg border border-[#17221c]/10 bg-white p-4 text-left">
+                    <div className="font-mono text-[11px] font-bold text-[#17221c] uppercase tracking-wide mb-2">
+                      Observed Feature Inputs (Model Telemetry Context)
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-xs">
+                      <div className="rounded bg-[#fbf9f4] p-2 border border-[#17221c]/5">
+                        <span className="text-[#405047] block text-[10px] uppercase">Productive Ratio</span>
+                        <span className="font-bold text-[#17221c]">
+                          {Math.round((latestAnalysis.feature_snapshot.productive_activity_ratio || 0) * 100)}%
+                        </span>
+                      </div>
+                      <div className="rounded bg-[#fbf9f4] p-2 border border-[#17221c]/5">
+                        <span className="text-[#405047] block text-[10px] uppercase">Distraction Ratio</span>
+                        <span className="font-bold text-[#17221c]">
+                          {Math.round((latestAnalysis.feature_snapshot.distraction_activity_ratio || 0) * 100)}%
+                        </span>
+                      </div>
+                      <div className="rounded bg-[#fbf9f4] p-2 border border-[#17221c]/5">
+                        <span className="text-[#405047] block text-[10px] uppercase">Context Switches</span>
+                        <span className="font-bold text-[#17221c]">
+                          {latestAnalysis.feature_snapshot.activity_switch_count ?? 0}
+                        </span>
+                      </div>
+                      <div className="rounded bg-[#fbf9f4] p-2 border border-[#17221c]/5">
+                        <span className="text-[#405047] block text-[10px] uppercase">Quiz Baseline</span>
+                        <span className="font-bold text-[#17221c]">
+                          {latestAnalysis.feature_snapshot.quiz_score !== null && latestAnalysis.feature_snapshot.quiz_score !== undefined
+                            ? `${latestAnalysis.feature_snapshot.quiz_score}%`
+                            : 'Median Imputed'}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-[10px] text-[#405047] italic">
+                      Note: These observed feature metrics represent model inputs and statistical associations, not direct causal guarantees.
+                    </p>
+                  </div>
+                )}
+
+                <div className="inline-flex items-center gap-2 rounded-md bg-[#17221c] px-3 py-1 font-mono text-[11px] font-bold text-[#f5f1e8] uppercase">
                   <span>Model: {latestAnalysis.model_version || 'v1.0'}</span>
                   <span>•</span>
                   <span>Analyzed: {new Date(latestAnalysis.analyzed_at).toLocaleDateString()}</span>

@@ -143,4 +143,14 @@ Task 13 implements a clean student-facing Focus and Distraction scoring presenta
 3. **Model Reuse**: Reuses existing Task 11 model artifacts (`focus_regressor.joblib` & `distraction_classifier.joblib`) without retraining or modifying model weights.
 4. **Real-Data Gate Preservation**: Inference runs strictly when `activity_count >= 1` and `total_duration_seconds > 0.0`, preventing fake score generation for empty sessions.
 
+## Performance Prediction & Analysis (Task 14)
+
+Task 14 implements the student-facing Performance Prediction & Analysis presentation layer:
+
+1. **Model Reuse**: Reuses the Task 11 `performance_regressor.joblib` (`GradientBoostingRegressor`) served by `backend/app/services/ml_service.py` without retraining or creating secondary models.
+2. **AI vs. Actual Distinction**: Clearly separates AI Predicted Performance (continuous $0.0 - 100.0$ ML regressor estimate) from Actual Academic Performance (`Quiz` & `PerformanceReport` records).
+3. **Telemetry Interpretation Limits**: Displays observed feature values alongside predictions with explicit disclaimers that observed telemetry represents model input associations rather than causal claims. Excludes SHAP, feature-importance metrics, and external explainability libraries.
+4. **Bounds & Zero-Schema Impact**: Bounds performance prediction outputs to $[0.0, 100.0]$ via `np.clip(raw_perf, 0.0, 100.0)`. Performs zero database schema modifications.
+
+
 
