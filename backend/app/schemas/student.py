@@ -220,6 +220,29 @@ class RecommendationOutcomeResponse(BaseModel):
     notes: str | None = None
 
 
+class RecommendationGenerateRequest(BaseModel):
+    session_id: UUID
+
+
+class RecommendationHistoryItemResponse(BaseModel):
+    id: UUID
+    student_id: UUID
+    source_session_id: UUID
+    recommendation_id: UUID
+    recommendation_type: str
+    title: str
+    content: str
+    issued_at: datetime
+    selection_reason: str | None = None
+    selector_version: str
+    behavioural_persona: str | None = None
+    selection_context: dict[str, Any] = Field(default_factory=dict)
+    outcome_status: str = "unmeasured"
+    recommendation_followed: bool | None = None
+    delta_focus_next_session: float | None = None
+
+
+
 # ---------------------------------------------------------------------------
 # Student Dashboard Aggregated Schemas
 # ---------------------------------------------------------------------------

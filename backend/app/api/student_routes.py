@@ -12,12 +12,13 @@ from app.schemas.student import (
     QuizResponse,
     RecommendationEventCreate,
     RecommendationEventResponse,
+    RecommendationGenerateRequest,
+    RecommendationHistoryItemResponse,
     RecommendationOutcomeCreate,
     RecommendationOutcomeResponse,
     RecommendationResponse,
     SessionActivitySummaryResponse,
     StudentDashboardResponse,
-
     StudyActivityCreate,
     StudyActivityResponse,
     StudySessionCreate,
@@ -27,7 +28,7 @@ from app.schemas.student import (
     SubjectCreate,
     SubjectResponse,
 )
-from app.services import student_service
+from app.services import recommendation_service, student_service
 
 student_router = APIRouter(prefix="/student", tags=["student"])
 
@@ -324,6 +325,54 @@ def list_recommendations(
     return student_service.list_available_recommendations(db)
 
 
+@student_router.post(
+    "/recommendations/generate",
+    response_model=RecommendationEventResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Generate personalized recommendation event for a session",
+)
+def generate_recommendation(
+    data: RecommendationGenerateRequest,
+    current_user: AuthenticatedUser = Depends(require_student),
+    db: Session = Depends(get_db),
+) -> RecommendationEventResponse:
+    return recommendation_service.generate_student_recommendation(
+        current_user.student_id, data.session_id, db  # type: ignore[arg-type]
+    )
+
+
+@student_router.get(
+    "/recommendations/history",
+    response_model=list[RecommendationHistoryItemResponse],
+    summary="Retrieve student's recommendation history",
+)
+def get_recommendation_history(
+    limit: int = Query(default=20, ge=1, le=100),
+    current_user: AuthenticatedUser = Depends(require_student),
+    db: Session = Depends(get_db),
+) -> list[RecommendationHistoryItemResponse]:
+    return recommendation_service.get_student_recommendation_history(
+        current_user.student_id, db, limit=limit  # type: ignore[arg-type]
+    )
+
+
+@student_router.get(
+    "/recommendations/latest",
+    response_model=RecommendationHistoryItemResponse | None,
+    summary="Retrieve latest student recommendation event",
+)
+def get_latest_recommendation(
+    current_user: AuthenticatedUser = Depends(require_student),
+    db: Session = Depends(get_db),
+) -> RecommendationHistoryItemResponse | None:
+    res = recommendation_service.get_latest_student_recommendation(
+        current_user.student_id, db  # type: ignore[arg-type]
+    )
+    if not res:
+        return None
+    return RecommendationHistoryItemResponse(**res)
+
+
 @student_router.get(
     "/recommendations/{recommendation_id}",
     response_model=RecommendationResponse,
@@ -370,4 +419,6 @@ def record_outcome(
     return student_service.record_recommendation_outcome(
         recommendation_id, current_user.student_id, data, db  # type: ignore[arg-type]
     )
+
+
 

@@ -673,12 +673,8 @@ def get_performance_report(
 # Recommendations & Intervention Evaluation Services
 # ---------------------------------------------------------------------------
 def list_available_recommendations(db: Session) -> list[Recommendation]:
-    items = db.scalars(
-        select(Recommendation)
-        .where(Recommendation.is_active == True)  # noqa: E712
-        .order_by(Recommendation.title.asc())
-    ).all()
-    return list(items)
+    from app.services.recommendation_service import ensure_default_recommendation_catalog
+    return ensure_default_recommendation_catalog(db)
 
 
 def get_recommendation_by_id(recommendation_id: UUID, db: Session) -> Recommendation:

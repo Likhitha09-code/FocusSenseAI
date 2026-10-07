@@ -152,5 +152,15 @@ Task 14 implements the student-facing Performance Prediction & Analysis presenta
 3. **Telemetry Interpretation Limits**: Displays observed feature values alongside predictions with explicit disclaimers that observed telemetry represents model input associations rather than causal claims. Excludes SHAP, feature-importance metrics, and external explainability libraries.
 4. **Bounds & Zero-Schema Impact**: Bounds performance prediction outputs to $[0.0, 100.0]$ via `np.clip(raw_perf, 0.0, 100.0)`. Performs zero database schema modifications.
 
+## Lightweight Adaptive Recommendation Engine (Task 15)
+
+Task 15 implements the personalized recommendation and habit adjustment layer:
+
+1. **Deterministic Persona Classification**: Maps telemetry and ML predictions into non-clinical project personas (`HIGHLY_DISTRACTED`, `CONTEXT_SWITCHER`, `FATIGUED_STUDIER`, `LOW_ACADEMIC_RETENTION`, `HIGH_PERFORMER`, `BALANCED_STUDIER`) using transparent rule thresholds.
+2. **Context Snapshot Persistence**: Stores `RecommendationEvent` records capturing a frozen snapshot of feature inputs (`selection_context`), `selector_version="v1.0"`, and `behavioural_persona`.
+3. **Outcome Integrity**: Prevents premature or fake outcome creation. Outcome fields remain unset (`None`) until real follow-through events are recorded.
+4. **History Stream & Zero-Schema Alterations**: Exposes student-isolated recommendation history streams without modifying database schemas.
+
+
 
 

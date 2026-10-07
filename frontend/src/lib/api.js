@@ -156,3 +156,19 @@ export async function recordRecommendationOutcome(eventId, outcomeData) {
   const response = await api.post(`/api/v1/student/recommendations/events/${eventId}/outcomes`, outcomeData)
   return response.data
 }
+
+export async function generateStudentRecommendation(sessionId) {
+  const response = await api.post('/api/v1/student/recommendations/generate', { session_id: sessionId })
+  return response.data
+}
+
+export async function getStudentRecommendationHistory(params = {}) {
+  const response = await api.get('/api/v1/student/recommendations/history', { params })
+  return response.data
+}
+
+export async function getLatestStudentRecommendation() {
+  const response = await api.get('/api/v1/student/recommendations/latest')
+  return response.data
+}
+
