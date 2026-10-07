@@ -1,27 +1,41 @@
-import { CheckCircle2, History, Lightbulb, RefreshCw, Sparkles } from 'lucide-react'
+import { CheckCircle2, History, Lightbulb, RefreshCw, Sparkles, XCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { EmptyState } from '../../components/dashboard/EmptyState'
 import { SectionCard } from '../../components/dashboard/SectionCard'
-import { getStudentRecommendationHistory } from '../../lib/api'
+import { getStudentRecommendationHistory, recordRecommendationOutcome } from '../../lib/api'
 
 export function Recommendations() {
   const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(true)
+  const [recordingId, setRecordingId] = useState(null)
+
+  async function loadRecommendations() {
+    setLoading(true)
+    try {
+      const data = await getStudentRecommendationHistory({ limit: 20 })
+      setHistory(Array.isArray(data) ? data : [])
+    } catch (err) {
+      console.error('Failed to load recommendation history:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    async function loadRecommendations() {
-      setLoading(true)
-      try {
-        const data = await getStudentRecommendationHistory({ limit: 20 })
-        setHistory(Array.isArray(data) ? data : [])
-      } catch (err) {
-        console.error('Failed to load recommendation history:', err)
-      } finally {
-        setLoading(false)
-      }
-    }
     loadRecommendations()
   }, [])
+
+  const handleRecordFollowed = async (eventId, followed) => {
+    setRecordingId(eventId)
+    try {
+      await recordRecommendationOutcome(eventId, { recommendation_followed: followed })
+      await loadRecommendations()
+    } catch (err) {
+      console.error('Failed to record recommendation outcome:', err)
+    } finally {
+      setRecordingId(null)
+    }
+  }
 
   const activeRecommendation = history.length > 0 ? history[0] : null
 
@@ -36,8 +50,8 @@ export function Recommendations() {
           AI Recommendations & Interventions
         </h2>
         <p className="mt-2 text-sm text-[#405047] max-w-2xl leading-relaxed">
-          Actionable habit adjustments personalized to your behavioural profile. The lightweight recommendation
-          engine maps session telemetry to non-clinical study personas to select targeted habit recommendations.
+          Actionable habit adjustments personalized to your behavioural profile. Track your follow-through
+          and view observed next-session focus delta measurements.
         </p>
       </section>
 
@@ -85,6 +99,52 @@ export function Recommendations() {
                   </div>
                 )}
 
+                {/* Follow-through action buttons */}
+                <div className="rounded-lg border border-[#17221c]/10 bg-white p-4 space-y-3">
+                  <div className="font-mono text-xs font-bold text-[#17221c] uppercase tracking-wide">
+                    Record Recommendation Follow-Through
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      onClick={() => handleRecordFollowed(activeRecommendation.id, true)}
+                      disabled={recordingId === activeRecommendation.id}
+                      className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 font-mono text-xs font-bold tracking-wider uppercase transition ${
+                        activeRecommendation.recommendation_followed === true
+                          ? 'bg-emerald-800 text-white'
+                          : 'bg-[#17221c] text-[#f5f1e8] hover:bg-[#2b3a32]'
+                      }`}
+                    >
+                      <CheckCircle2 size={14} />
+                      <span>{activeRecommendation.recommendation_followed === true ? 'Followed' : 'I Followed This'}</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleRecordFollowed(activeRecommendation.id, false)}
+                      disabled={recordingId === activeRecommendation.id}
+                      className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 font-mono text-xs font-bold tracking-wider uppercase transition ${
+                        activeRecommendation.recommendation_followed === false
+                          ? 'bg-red-800 text-white'
+                          : 'bg-stone-200 text-[#17221c] hover:bg-stone-300'
+                      }`}
+                    >
+                      <XCircle size={14} />
+                      <span>{activeRecommendation.recommendation_followed === false ? 'Not Followed' : 'Did Not Follow'}</span>
+                    </button>
+
+                    {activeRecommendation.outcome_status === 'measured' && activeRecommendation.delta_focus_next_session !== null && (
+                      <span className="font-mono text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-md border border-emerald-200">
+                        Observed next-session focus change:{' '}
+                        {activeRecommendation.delta_focus_next_session >= 0 ? `+${activeRecommendation.delta_focus_next_session}` : activeRecommendation.delta_focus_next_session} pts
+                      </span>
+                    )}
+                  </div>
+                  {activeRecommendation.outcome_status === 'measured' && (
+                    <p className="text-[10px] text-[#405047] italic">
+                      Note: Focus delta values are observational comparisons across consecutive study sessions, not causal claims.
+                    </p>
+                  )}
+                </div>
+
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs font-mono text-[#405047]">
                   <span>Selector Version: {activeRecommendation.selector_version || 'v1.0'}</span>
                   <span>Issued: {new Date(activeRecommendation.issued_at).toLocaleDateString()}</span>
@@ -102,7 +162,7 @@ export function Recommendations() {
           {/* Recommendation History Stream */}
           <SectionCard
             title="Recommendation History & Follow-Through Stream"
-            subtitle="Chronological log of issued recommendations and recorded outcome status"
+            subtitle="Chronological log of issued recommendations, recorded follow-through, and focus changes"
             icon={History}
           >
             {history.length > 0 ? (
@@ -112,8 +172,9 @@ export function Recommendations() {
                     <tr>
                       <th className="px-4 py-2.5 font-bold">Recommendation</th>
                       <th className="px-4 py-2.5 font-bold">Persona</th>
-                      <th className="px-4 py-2.5 font-bold">Issued Date</th>
-                      <th className="px-4 py-2.5 font-bold">Outcome Status</th>
+                      <th className="px-4 py-2.5 font-bold">Followed</th>
+                      <th className="px-4 py-2.5 font-bold">Observed Focus Delta</th>
+                      <th className="px-4 py-2.5 font-bold">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#17221c]/10">
@@ -126,8 +187,15 @@ export function Recommendations() {
                         <td className="px-4 py-3 font-semibold text-[#4e6656]">
                           {item.behavioural_persona || '—'}
                         </td>
-                        <td className="px-4 py-3 text-[#405047]">
-                          {new Date(item.issued_at).toLocaleDateString()}
+                        <td className="px-4 py-3 font-semibold">
+                          {item.recommendation_followed === true && <span className="text-emerald-700">Yes</span>}
+                          {item.recommendation_followed === false && <span className="text-red-700">No</span>}
+                          {item.recommendation_followed === null && <span className="text-stone-400">Unrecorded</span>}
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-[#17221c]">
+                          {item.delta_focus_next_session !== null && item.delta_focus_next_session !== undefined
+                            ? `${item.delta_focus_next_session >= 0 ? '+' : ''}${item.delta_focus_next_session} pts`
+                            : '—'}
                         </td>
                         <td className="px-4 py-3">
                           <span

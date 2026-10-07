@@ -273,9 +273,14 @@ def get_student_recommendation_history(
             "selector_version": ev.selector_version,
             "behavioural_persona": ev.behavioural_persona,
             "selection_context": ev.selection_context or {},
+            "outcome_id": outcome.id if outcome else None,
             "outcome_status": outcome.outcome_status if outcome else "unmeasured",
             "recommendation_followed": outcome.recommendation_followed if outcome else None,
+            "next_session_id": outcome.next_session_id if outcome else None,
+            "next_focus_score": outcome.next_focus_score if outcome else None,
             "delta_focus_next_session": outcome.delta_focus_next_session if outcome else None,
+            "measured_at": outcome.measured_at if outcome else None,
+            "notes": outcome.notes if outcome else None,
         }
         results.append(item)
 
@@ -288,4 +293,156 @@ def get_latest_student_recommendation(
     """Return the most recent recommendation event generated for the student."""
     history = get_student_recommendation_history(student_id, db, limit=1)
     return history[0] if history else None
+
+
+def record_recommendation_outcome(
+    student_id: UUID,
+    event_id: UUID,
+    recommendation_followed: bool | None = None,
+    next_session_id: UUID | None = None,
+    next_focus_score: float | None = None,
+    delta_focus_next_session: float | None = None,
+    outcome_status: str | None = None,
+    notes: str | None = None,
+    db: Session = None,
+) -> RecommendationOutcome:
+    """Record or update an intervention outcome for an issued recommendation event.
+
+    Idempotent: Updates existing outcome if present rather than creating duplicates.
+    Automatic Next Session Selection: Selects ONLY the immediate next completed session
+    (ORDER BY started_at ASC LIMIT 1) without skipping unanalyzed sessions.
+    """
+    # 1. Verify recommendation event exists and belongs to student
+    event = db.scalar(
+        select(RecommendationEvent).where(
+            RecommendationEvent.id == event_id,
+            RecommendationEvent.student_id == student_id,
+        )
+    )
+    if not event:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Recommendation event not found for this student",
+        )
+
+    # 2. Retrieve source study session
+    source_session = db.get(StudySession, event.source_session_id)
+    if not source_session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Source study session not found",
+        )
+
+    # 3. Determine target next_session
+    target_next_session: StudySession | None = None
+
+    if next_session_id:
+        # Explicit next_session_id provided
+        target_next_session = db.scalar(
+            select(StudySession).where(
+                StudySession.id == next_session_id,
+                StudySession.student_id == student_id,
+            )
+        )
+        if not target_next_session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Next study session not found for this student",
+            )
+        # Chronological validation
+        if source_session.started_at and target_next_session.started_at:
+            if target_next_session.started_at <= source_session.started_at:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Next study session must occur after recommendation source session",
+                )
+    else:
+        # Automatic selection: IMMEDIATE next completed session ONLY
+        target_next_session = db.scalar(
+            select(StudySession)
+            .where(
+                StudySession.student_id == student_id,
+                StudySession.started_at > source_session.started_at,
+                StudySession.status == "completed",
+            )
+            .order_by(StudySession.started_at.asc())
+            .limit(1)
+        )
+
+    # 4. Evaluate ML focus scores & delta_focus_next_session
+    source_analysis = db.scalar(
+        select(BehaviouralAnalysis).where(
+            BehaviouralAnalysis.study_session_id == source_session.id
+        )
+    )
+    source_focus = source_analysis.focus_score if source_analysis else None
+
+    computed_next_focus = next_focus_score
+    computed_delta_focus = delta_focus_next_session
+    final_status = outcome_status or "pending"
+
+    if target_next_session:
+        next_analysis = db.scalar(
+            select(BehaviouralAnalysis).where(
+                BehaviouralAnalysis.study_session_id == target_next_session.id
+            )
+        )
+        if next_analysis and next_analysis.focus_score is not None and source_focus is not None:
+            if computed_next_focus is None:
+                computed_next_focus = next_analysis.focus_score
+            if computed_delta_focus is None:
+                computed_delta_focus = round(float(computed_next_focus - source_focus), 1)
+            final_status = "measured"
+
+    if computed_delta_focus is not None or computed_next_focus is not None:
+        if outcome_status is not None:
+            final_status = outcome_status
+        elif computed_delta_focus is not None:
+            final_status = "measured"
+
+    # 5. Idempotent Create / Update
+    outcome = db.scalar(
+        select(RecommendationOutcome).where(
+            RecommendationOutcome.recommendation_event_id == event_id
+        )
+    )
+
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+
+    if outcome:
+        if recommendation_followed is not None:
+            outcome.recommendation_followed = recommendation_followed
+        if target_next_session:
+            outcome.next_session_id = target_next_session.id
+        if computed_next_focus is not None:
+            outcome.next_focus_score = computed_next_focus
+        if computed_delta_focus is not None:
+            outcome.delta_focus_next_session = computed_delta_focus
+        if final_status:
+            outcome.outcome_status = final_status
+        outcome.measured_at = now
+        if notes is not None:
+            outcome.notes = notes
+        db.commit()
+        db.refresh(outcome)
+        return outcome
+
+    outcome = RecommendationOutcome(
+        id=uuid.uuid4(),
+        recommendation_event_id=event_id,
+        recommendation_followed=recommendation_followed,
+        next_session_id=target_next_session.id if target_next_session else None,
+        measured_at=now,
+        next_focus_score=computed_next_focus,
+        delta_focus_next_session=computed_delta_focus,
+        outcome_status=final_status,
+        notes=notes,
+    )
+    db.add(outcome)
+    db.commit()
+    db.refresh(outcome)
+    return outcome
+
+
 

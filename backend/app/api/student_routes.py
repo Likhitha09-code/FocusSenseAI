@@ -407,8 +407,8 @@ def record_event(
     "/recommendations/{recommendation_id}/outcome",
     response_model=RecommendationOutcomeResponse,
     status_code=status.HTTP_200_OK,
-    summary="Record or update an intervention outcome",
-    description="Stores recommendation_followed, delta_focus_next_session, and next session evaluation for causal analysis.",
+    summary="Record or update an intervention outcome by recommendation_id",
+    description="Stores recommendation_followed, delta_focus_next_session, and next session evaluation.",
 )
 def record_outcome(
     recommendation_id: UUID,
@@ -419,6 +419,30 @@ def record_outcome(
     return student_service.record_recommendation_outcome(
         recommendation_id, current_user.student_id, data, db  # type: ignore[arg-type]
     )
+
+
+@student_router.post(
+    "/recommendations/events/{event_id}/outcome",
+    response_model=RecommendationOutcomeResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Record or update an intervention outcome by event_id",
+    description="Stores recommendation_followed, delta_focus_next_session, and next session evaluation.",
+)
+def record_event_outcome(
+    event_id: UUID,
+    data: RecommendationOutcomeCreate,
+    current_user: AuthenticatedUser = Depends(require_student),
+    db: Session = Depends(get_db),
+) -> RecommendationOutcomeResponse:
+    return recommendation_service.record_recommendation_outcome(
+        student_id=current_user.student_id,  # type: ignore[arg-type]
+        event_id=event_id,
+        recommendation_followed=data.recommendation_followed,
+        next_session_id=data.next_session_id,
+        notes=data.notes,
+        db=db,
+    )
+
 
 
 

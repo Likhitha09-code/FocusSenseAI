@@ -161,6 +161,16 @@ Task 15 implements the personalized recommendation and habit adjustment layer:
 3. **Outcome Integrity**: Prevents premature or fake outcome creation. Outcome fields remain unset (`None`) until real follow-through events are recorded.
 4. **History Stream & Zero-Schema Alterations**: Exposes student-isolated recommendation history streams without modifying database schemas.
 
+## Intervention / Recommendation Outcome Tracking (Task 16)
+
+Task 16 implements recommendation outcome tracking and next-session focus delta measurement:
+
+1. **Idempotent Outcome Updates**: Each `RecommendationEvent` has at most one `RecommendationOutcome` record. Subsequent updates overwrite existing outcome fields without duplicating records.
+2. **Immediate Next-Session Selection Rule**: Automatic next-session evaluation selects strictly the immediate next completed session (`started_at > source_session.started_at ORDER BY started_at ASC LIMIT 1`) without skipping unanalyzed sessions.
+3. **Synchronous Re-evaluability**: Re-evaluation occurs via endpoint invocation without requiring background workers, Celery, or scheduled jobs. Unanalyzed sessions remain `outcome_status="pending"` until ML analysis completes.
+4. **Non-Causal Observational Framing**: UI badges and documentation label focus changes as `"Observed next-session focus delta"` to prevent unfounded causal claims.
+
+
 
 
 

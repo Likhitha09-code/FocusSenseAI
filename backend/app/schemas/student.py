@@ -196,13 +196,13 @@ class RecommendationEventResponse(BaseModel):
 
 
 class RecommendationOutcomeCreate(BaseModel):
-    recommendation_event_id: UUID
-    recommendation_followed: bool
+    recommendation_event_id: UUID | None = None
+    recommendation_followed: bool | None = None
     next_session_id: UUID | None = None
     measured_at: datetime | None = None
     next_focus_score: float | None = Field(default=None, ge=0.0, le=100.0)
     delta_focus_next_session: float | None = None
-    outcome_status: str = Field(default="measured", pattern="^(pending|measured|unavailable)$")
+    outcome_status: str = Field(default="pending", pattern="^(pending|measured|unavailable)$")
     notes: str | None = None
 
 
@@ -237,9 +237,15 @@ class RecommendationHistoryItemResponse(BaseModel):
     selector_version: str
     behavioural_persona: str | None = None
     selection_context: dict[str, Any] = Field(default_factory=dict)
+    outcome_id: UUID | None = None
     outcome_status: str = "unmeasured"
     recommendation_followed: bool | None = None
+    next_session_id: UUID | None = None
+    next_focus_score: float | None = None
     delta_focus_next_session: float | None = None
+    measured_at: datetime | None = None
+    notes: str | None = None
+
 
 
 

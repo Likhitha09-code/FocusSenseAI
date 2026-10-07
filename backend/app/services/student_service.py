@@ -724,56 +724,33 @@ def record_recommendation_outcome(
     # 1. Verify recommendation exists
     get_recommendation_by_id(recommendation_id, db)
 
-    # 2. Verify recommendation event exists and belongs to the authenticated student
-    event = db.scalar(
-        select(RecommendationEvent).where(
-            RecommendationEvent.id == data.recommendation_event_id,
-            RecommendationEvent.student_id == student_id,
-            RecommendationEvent.recommendation_id == recommendation_id,
+    # 2. Determine target event_id
+    event_id = data.recommendation_event_id
+    if not event_id:
+        # Find latest event for this recommendation and student
+        event = db.scalar(
+            select(RecommendationEvent).where(
+                RecommendationEvent.recommendation_id == recommendation_id,
+                RecommendationEvent.student_id == student_id,
+            ).order_by(RecommendationEvent.issued_at.desc())
         )
-    )
-    if not event:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Recommendation event not found for this student and recommendation",
-        )
+        if not event:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Recommendation event not found for this student and recommendation",
+            )
+        event_id = event.id
 
-    # 3. If next_session_id is provided, verify it belongs to the student
-    if data.next_session_id:
-        get_study_session(data.next_session_id, student_id, db)
-
-    # 4. Check if outcome already exists for this event
-    existing_outcome = db.scalar(
-        select(RecommendationOutcome).where(
-            RecommendationOutcome.recommendation_event_id == data.recommendation_event_id
-        )
-    )
-
-    if existing_outcome:
-        existing_outcome.recommendation_followed = data.recommendation_followed
-        existing_outcome.next_session_id = data.next_session_id
-        existing_outcome.measured_at = data.measured_at or datetime.now(timezone.utc)
-        existing_outcome.next_focus_score = data.next_focus_score
-        existing_outcome.delta_focus_next_session = data.delta_focus_next_session
-        existing_outcome.outcome_status = data.outcome_status
-        existing_outcome.notes = data.notes
-        db.commit()
-        db.refresh(existing_outcome)
-        return existing_outcome
-
-    outcome = RecommendationOutcome(
-        id=uuid.uuid4(),
-        recommendation_event_id=data.recommendation_event_id,
+    from app.services import recommendation_service
+    return recommendation_service.record_recommendation_outcome(
+        student_id=student_id,
+        event_id=event_id,
         recommendation_followed=data.recommendation_followed,
         next_session_id=data.next_session_id,
-        measured_at=data.measured_at or datetime.now(timezone.utc),
         next_focus_score=data.next_focus_score,
         delta_focus_next_session=data.delta_focus_next_session,
         outcome_status=data.outcome_status,
         notes=data.notes,
+        db=db,
     )
-    db.add(outcome)
-    db.commit()
-    db.refresh(outcome)
-    return outcome
 
