@@ -1,0 +1,38 @@
+{
+  "model_version": "v1.0",
+  "trained_at": "2026-10-07T10:04:08.102996+00:00",
+  "feature_names": [
+    "total_session_duration",
+    "productive_duration",
+    "distraction_duration",
+    "break_duration",
+    "productive_activity_ratio",
+    "distraction_activity_ratio",
+    "activity_switch_count",
+    "activity_count",
+    "unique_application_count",
+    "quiz_score"
+  ],
+  "target_names": [
+    "focus_score",
+    "distraction_level",
+    "performance_score"
+  ],
+  "disclaimer": "Development initial model trained on synthetic dataset for offline benchmarking.",
+  "metrics": {
+    "focus_regressor": {
+      "mae": 4.8437481986264155,
+      "rmse": 6.110021011941642,
+      "r2": 0.8639365932464795
+    },
+    "distraction_classifier": {
+      "accuracy": 0.93,
+      "macro_f1": 0.8174461984689628
+    },
+    "performance_regressor": {
+      "mae": 4.658118564317202,
+      "rmse": 5.813161189754592,
+      "r2": 0.7697307693144309
+    }
+  }
+}

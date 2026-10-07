@@ -1,0 +1,1 @@
+"""Recommendation selection boundary; adaptive selection is intentionally not implemented yet."""
