@@ -106,6 +106,29 @@ class Quiz(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     subject: Mapped[Subject] = relationship(back_populates="quizzes")
+    performance_reports: Mapped[list["PerformanceReport"]] = relationship(
+        back_populates="quiz", cascade="all, delete-orphan"
+    )
+
+    @property
+    def score(self) -> float | None:
+        if hasattr(self, "_score"):
+            return self._score
+        if self.performance_reports:
+            for rep in self.performance_reports:
+                if rep.score is not None:
+                    return rep.score
+        return None
+
+    @property
+    def max_score(self) -> float | None:
+        if hasattr(self, "_max_score"):
+            return self._max_score
+        if self.performance_reports:
+            for rep in self.performance_reports:
+                if rep.max_score is not None:
+                    return rep.max_score
+        return None
 
 
 class PerformanceReport(Base):
@@ -122,6 +145,17 @@ class PerformanceReport(Base):
     metadata_json: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSON_TYPE, default=dict, server_default="{}"
     )
+
+    quiz: Mapped[Quiz | None] = relationship(back_populates="performance_reports")
+    study_session: Mapped[StudySession | None] = relationship()
+
+    @property
+    def subject_name(self) -> str | None:
+        if self.quiz and self.quiz.subject:
+            return self.quiz.subject.name
+        if self.study_session and self.study_session.subject:
+            return self.study_session.subject.name
+        return None
 
 
 class BehaviouralAnalysis(Base):

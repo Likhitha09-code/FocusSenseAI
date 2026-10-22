@@ -6,6 +6,7 @@ from app.schemas.auth import (
 )
 from app.schemas.student import (
     BehaviourAnalysisResponse,
+    PerformanceReportCreate,
     PerformanceReportResponse,
     QuizCreate,
     QuizResponse,
@@ -31,6 +32,7 @@ from app.schemas.student import (
 __all__ = [
     "BehaviourAnalysisResponse",
     "ParentProvisionRequest",
+    "PerformanceReportCreate",
     "PerformanceReportResponse",
     "QuizCreate",
     "QuizResponse",

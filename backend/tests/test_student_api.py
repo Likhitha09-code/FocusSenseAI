@@ -708,3 +708,222 @@ def test_task10_activity_lifecycle_validation_and_features(
     assert features["activity_count"] == 2
 
 
+
+
+# ---------------------------------------------------------------------------
+# 11. Performance Assessment History Regression Tests
+# ---------------------------------------------------------------------------
+def test_quiz_with_score_creates_persisted_performance_report(
+    client: TestClient,
+    student_a: tuple[Student, uuid.UUID],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    stu_a, auth_a = student_a
+    setup_token_mock(monkeypatch, auth_a)
+
+    # 1. Create a subject
+    subj_resp = client.post(
+        "/api/v1/student/subjects",
+        json={"name": "Software Architecture"},
+        headers={"Authorization": "Bearer token-a"},
+    )
+    assert subj_resp.status_code == status.HTTP_201_CREATED
+    subj_id = subj_resp.json()["id"]
+
+    # 2. Complete/record a quiz with genuine score
+    quiz_resp = client.post(
+        "/api/v1/student/quizzes",
+        json={
+            "subject_id": subj_id,
+            "title": "Design Patterns Assessment",
+            "score": 92.5,
+            "max_score": 100.0,
+            "quiz_date": "2026-10-23",
+        },
+        headers={"Authorization": "Bearer token-a"},
+    )
+    assert quiz_resp.status_code == status.HTTP_201_CREATED
+    quiz_data = quiz_resp.json()
+    assert quiz_data["score"] == 92.5
+    assert quiz_data["max_score"] == 100.0
+    quiz_id = quiz_data["id"]
+
+    # 3. Verify it is persisted and appears in Assessment History (/performance)
+    perf_resp = client.get(
+        "/api/v1/student/performance",
+        headers={"Authorization": "Bearer token-a"},
+    )
+    assert perf_resp.status_code == status.HTTP_200_OK
+    reports = perf_resp.json()
+    assert len(reports) == 1
+    rep = reports[0]
+    assert rep["quiz_id"] == quiz_id
+    assert rep["score"] == 92.5
+    assert rep["max_score"] == 100.0
+    assert rep["performance_metric"] == "Design Patterns Assessment"
+    assert rep["subject_name"] == "Software Architecture"
+    assert "measured_at" in rep
+
+    # 4. Verify quizzes list endpoint also displays score
+    quizzes_resp = client.get(
+        "/api/v1/student/quizzes",
+        headers={"Authorization": "Bearer token-a"},
+    )
+    assert quizzes_resp.status_code == status.HTTP_200_OK
+    q_list = quizzes_resp.json()
+    assert len(q_list) == 1
+    assert q_list[0]["score"] == 92.5
+    assert q_list[0]["max_score"] == 100.0
+
+    # 5. Verify student dashboard subject performance reflects the assessment score
+    dash_resp = client.get(
+        "/api/v1/student/dashboard",
+        headers={"Authorization": "Bearer token-a"},
+    )
+    assert dash_resp.status_code == status.HTTP_200_OK
+    dash_data = dash_resp.json()
+    subj_perf = next(
+        (sp for sp in dash_data["subject_performance"] if sp["subject_id"] == subj_id),
+        None,
+    )
+    assert subj_perf is not None
+    assert subj_perf["average_score"] == 92.5
+    assert subj_perf["total_quizzes"] == 1
+
+
+def test_direct_performance_report_creation_and_listing(
+    client: TestClient,
+    student_a: tuple[Student, uuid.UUID],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    stu_a, auth_a = student_a
+    setup_token_mock(monkeypatch, auth_a)
+
+    # 1. Create a subject
+    subj_resp = client.post(
+        "/api/v1/student/subjects",
+        json={"name": "Mathematics"},
+        headers={"Authorization": "Bearer token-a"},
+    )
+    assert subj_resp.status_code == status.HTTP_201_CREATED
+    subj_id = subj_resp.json()["id"]
+
+    # 2. Record a performance assessment directly
+    perf_create_resp = client.post(
+        "/api/v1/student/performance",
+        json={
+            "subject_id": subj_id,
+            "performance_metric": "Midterm Exam 1",
+            "score": 85.0,
+            "max_score": 100.0,
+        },
+        headers={"Authorization": "Bearer token-a"},
+    )
+    assert perf_create_resp.status_code == status.HTTP_201_CREATED
+    created = perf_create_resp.json()
+    assert created["score"] == 85.0
+    assert created["max_score"] == 100.0
+    assert created["performance_metric"] == "Midterm Exam 1"
+    assert created["subject_name"] == "Mathematics"
+    report_id = created["id"]
+
+    # 3. Retrieve specific performance report
+    get_rep_resp = client.get(
+        f"/api/v1/student/performance/{report_id}",
+        headers={"Authorization": "Bearer token-a"},
+    )
+    assert get_rep_resp.status_code == status.HTTP_200_OK
+    assert get_rep_resp.json()["id"] == report_id
+
+
+def test_performance_assessment_data_isolation(
+    client: TestClient,
+    student_a: tuple[Student, uuid.UUID],
+    student_b: tuple[Student, uuid.UUID],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _, auth_a = student_a
+    _, auth_b = student_b
+
+    # Student A creates an assessment
+    setup_token_mock(monkeypatch, auth_a)
+    subj_resp = client.post(
+        "/api/v1/student/subjects",
+        json={"name": "Data Structures"},
+        headers={"Authorization": "Bearer token-a"},
+    )
+    subj_id = subj_resp.json()["id"]
+
+    rep_resp = client.post(
+        "/api/v1/student/performance",
+        json={
+            "subject_id": subj_id,
+            "performance_metric": "Binary Trees Quiz",
+            "score": 95.0,
+            "max_score": 100.0,
+        },
+        headers={"Authorization": "Bearer token-a"},
+    )
+    rep_id = rep_resp.json()["id"]
+
+    # Student B queries performance history -> empty list
+    setup_token_mock(monkeypatch, auth_b)
+    b_history_resp = client.get(
+        "/api/v1/student/performance",
+        headers={"Authorization": "Bearer token-b"},
+    )
+    assert b_history_resp.status_code == status.HTTP_200_OK
+    assert b_history_resp.json() == []
+
+    # Student B cannot access Student A's report directly -> 404
+    b_get_resp = client.get(
+        f"/api/v1/student/performance/{rep_id}",
+        headers={"Authorization": "Bearer token-b"},
+    )
+    assert b_get_resp.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_performance_assessment_validation_and_empty_state(
+    client: TestClient,
+    student_a: tuple[Student, uuid.UUID],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _, auth_a = student_a
+
+    # 1. Unauthenticated request returns 401
+    unauth_resp = client.get("/api/v1/student/performance")
+    assert unauth_resp.status_code == status.HTTP_401_UNAUTHORIZED
+
+    setup_token_mock(monkeypatch, auth_a)
+
+    # 2. Genuinely empty history returns 200 with empty list []
+    empty_resp = client.get(
+        "/api/v1/student/performance",
+        headers={"Authorization": "Bearer token-a"},
+    )
+    assert empty_resp.status_code == status.HTTP_200_OK
+    assert empty_resp.json() == []
+
+    # 3. Submitting score > max_score returns 400 Bad Request
+    invalid_resp = client.post(
+        "/api/v1/student/performance",
+        json={
+            "performance_metric": "Invalid Exam",
+            "score": 105.0,
+            "max_score": 100.0,
+        },
+        headers={"Authorization": "Bearer token-a"},
+    )
+    assert invalid_resp.status_code == status.HTTP_400_BAD_REQUEST
+
+    # 4. Submitting negative score returns 422 Unprocessable Content
+    neg_resp = client.post(
+        "/api/v1/student/performance",
+        json={
+            "performance_metric": "Negative Exam",
+            "score": -5.0,
+            "max_score": 100.0,
+        },
+        headers={"Authorization": "Bearer token-a"},
+    )
+    assert neg_resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

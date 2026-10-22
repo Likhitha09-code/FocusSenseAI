@@ -6,9 +6,12 @@ import {
   Brain,
   CheckCircle2,
   GraduationCap,
+  Loader2,
+  Plus,
   RefreshCw,
   TrendingDown,
   TrendingUp,
+  X,
 } from 'lucide-react'
 import {
   Bar,
@@ -23,10 +26,14 @@ import { useTheme } from '../../context/ThemeContext'
 import { SectionCard } from '../../components/dashboard/SectionCard'
 import { EmptyState } from '../../components/dashboard/EmptyState'
 import {
+  createStudentPerformance,
+  createStudentQuiz,
+  createStudentSubject,
   getStudentBehaviour,
   getStudentDashboard,
   getStudentPerformance,
   getStudentQuizzes,
+  getStudentSubjects,
 } from '../../lib/api'
 
 function PerformanceChartTooltip({ active, payload, label }) {
@@ -55,24 +62,38 @@ export function Performance() {
   const [analyses, setAnalyses] = useState([])
   const [reports, setReports] = useState([])
   const [quizzes, setQuizzes] = useState([])
+  const [subjects, setSubjects] = useState([])
   const [dashboardData, setDashboardData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+
+  // Assessment modal & form state
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [formError, setFormError] = useState('')
+  const [formSubjectId, setFormSubjectId] = useState('')
+  const [newSubjectName, setNewSubjectName] = useState('')
+  const [formTitle, setFormTitle] = useState('')
+  const [formScore, setFormScore] = useState('')
+  const [formMaxScore, setFormMaxScore] = useState('100')
+  const [formDate, setFormDate] = useState(() => new Date().toISOString().split('T')[0])
 
   const loadData = async () => {
     setLoading(true)
     setError(null)
     try {
-      const [behData, perfData, dashData, quizData] = await Promise.all([
+      const [behData, perfData, dashData, quizData, subjData] = await Promise.all([
         getStudentBehaviour({ limit: 10 }).catch(() => []),
-        getStudentPerformance({ limit: 20 }).catch(() => []),
+        getStudentPerformance({ limit: 50 }),
         getStudentDashboard().catch(() => null),
-        getStudentQuizzes().catch(() => []),
+        getStudentQuizzes(),
+        getStudentSubjects().catch(() => []),
       ])
       setAnalyses(Array.isArray(behData) ? behData : [])
       setReports(Array.isArray(perfData) ? perfData : [])
       setDashboardData(dashData)
       setQuizzes(Array.isArray(quizData) ? quizData : [])
+      setSubjects(Array.isArray(subjData) ? subjData : [])
     } catch (err) {
       console.error('Failed to load performance data:', err)
       setError('Unable to load performance analytics. Please check network connection.')
@@ -85,17 +106,19 @@ export function Performance() {
     let ignore = false
     async function initialFetch() {
       try {
-        const [behData, perfData, dashData, quizData] = await Promise.all([
+        const [behData, perfData, dashData, quizData, subjData] = await Promise.all([
           getStudentBehaviour({ limit: 10 }).catch(() => []),
-          getStudentPerformance({ limit: 20 }).catch(() => []),
+          getStudentPerformance({ limit: 50 }),
           getStudentDashboard().catch(() => null),
-          getStudentQuizzes().catch(() => []),
+          getStudentQuizzes(),
+          getStudentSubjects().catch(() => []),
         ])
         if (!ignore) {
           setAnalyses(Array.isArray(behData) ? behData : [])
           setReports(Array.isArray(perfData) ? perfData : [])
           setDashboardData(dashData)
           setQuizzes(Array.isArray(quizData) ? quizData : [])
+          setSubjects(Array.isArray(subjData) ? subjData : [])
           setLoading(false)
         }
       } catch (err) {
@@ -111,6 +134,78 @@ export function Performance() {
       ignore = true
     }
   }, [])
+
+  const handleRecordAssessment = async (e) => {
+    e.preventDefault()
+    setFormError('')
+
+    const parsedScore = parseFloat(formScore)
+    const parsedMax = parseFloat(formMaxScore) || 100.0
+
+    if (isNaN(parsedScore) || parsedScore < 0) {
+      setFormError('Please enter a valid non-negative score.')
+      return
+    }
+    if (parsedScore > parsedMax) {
+      setFormError(`Score (${parsedScore}) cannot exceed max scale (${parsedMax}).`)
+      return
+    }
+    if (!formTitle.trim()) {
+      setFormError('Please enter an assessment title.')
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      let resolvedSubjectId = formSubjectId
+
+      if (formSubjectId === 'NEW_SUBJECT') {
+        if (!newSubjectName.trim()) {
+          setFormError('Please enter a name for the new curriculum subject.')
+          setIsSubmitting(false)
+          return
+        }
+        const createdSubj = await createStudentSubject({ name: newSubjectName.trim() })
+        resolvedSubjectId = createdSubj.id
+        setSubjects((prev) => [...prev, createdSubj])
+      }
+
+      if (resolvedSubjectId && resolvedSubjectId !== '') {
+        await createStudentQuiz({
+          subject_id: resolvedSubjectId,
+          title: formTitle.trim(),
+          quiz_date: formDate || undefined,
+          score: parsedScore,
+          max_score: parsedMax,
+        })
+      } else {
+        await createStudentPerformance({
+          performance_metric: formTitle.trim(),
+          score: parsedScore,
+          max_score: parsedMax,
+          measured_at: formDate ? new Date(formDate).toISOString() : new Date().toISOString(),
+        })
+      }
+
+      setFormTitle('')
+      setFormScore('')
+      setFormMaxScore('100')
+      setFormSubjectId('')
+      setNewSubjectName('')
+      setShowAddModal(false)
+      await loadData()
+    } catch (err) {
+      console.error('Failed to record assessment:', err)
+      const detail = err.response?.data?.detail
+      setFormError(
+        typeof detail === 'string'
+          ? detail
+          : 'Failed to record assessment. Please check input values.'
+      )
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   const latestAnalysis = analyses.length > 0 ? analyses[0] : null
 
@@ -145,27 +240,46 @@ export function Performance() {
     comparisonMetricLabel = 'Study Focus Stability'
   }
 
-  // Combined assessments list (performance reports + quizzes)
+  // Combined assessments list (deduplicating linked reports and quizzes)
+  const linkedQuizIds = new Set(reports.map((r) => r.quiz_id).filter(Boolean))
+
   const combinedAssessments = [
-    ...reports.map((r) => ({
-      id: r.id,
-      title: r.performance_metric,
-      type: 'Performance Report',
-      score: r.score != null ? `${r.score}` : '—',
-      maxScore: r.max_score != null ? `${r.max_score}` : '100',
-      date: r.measured_at,
-    })),
-    ...quizzes.map((q) => {
-      const subj = subjectPerformanceList.find((s) => s.subject_id === q.subject_id)
+    ...reports.map((r) => {
+      let subjName = r.subject_name
+      if (!subjName && r.quiz_id) {
+        const q = quizzes.find((qz) => qz.id === r.quiz_id)
+        if (q) {
+          const s =
+            subjects.find((sb) => sb.id === q.subject_id) ||
+            subjectPerformanceList.find((sp) => sp.subject_id === q.subject_id)
+          subjName = s?.name || s?.subject_name
+        }
+      }
       return {
-        id: q.id,
-        title: q.title,
-        type: `Quiz Assessment (${subj?.subject_name || 'Subject'})`,
-        score: 'Recorded',
-        maxScore: 'N/A',
-        date: q.quiz_date || q.created_at,
+        id: r.id,
+        title: r.performance_metric,
+        type: subjName ? `Quiz Assessment (${subjName})` : 'Performance Report',
+        score: r.score != null ? `${r.score}` : '—',
+        maxScore: r.max_score != null ? `${r.max_score}` : '100',
+        date: r.measured_at,
       }
     }),
+    ...quizzes
+      .filter((q) => !linkedQuizIds.has(q.id))
+      .map((q) => {
+        const subj =
+          subjects.find((s) => s.id === q.subject_id) ||
+          subjectPerformanceList.find((s) => s.subject_id === q.subject_id)
+        const sName = subj?.name || subj?.subject_name || 'Subject'
+        return {
+          id: q.id,
+          title: q.title,
+          type: `Quiz Assessment (${sName})`,
+          score: q.score != null ? `${q.score}` : 'Recorded',
+          maxScore: q.max_score != null ? `${q.max_score}` : (q.score != null ? '100' : 'N/A'),
+          date: q.quiz_date || q.created_at,
+        }
+      }),
   ].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
 
   // Chart data for subject performance
@@ -498,8 +612,36 @@ export function Performance() {
             title="Performance Assessment History"
             subtitle="Historical quiz evaluations and logged assessment metrics"
             icon={GraduationCap}
+            action={
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddModal(true)
+                  setFormError('')
+                }}
+                className="flex items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-1.5 font-mono text-xs font-semibold text-white shadow-sm hover:opacity-90 transition"
+              >
+                <Plus size={14} />
+                <span>Record Assessment</span>
+              </button>
+            }
           >
-            {combinedAssessments.length > 0 ? (
+            {error ? (
+              <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-6 text-center space-y-3">
+                <AlertCircle size={28} className="mx-auto text-red-500" />
+                <h4 className="font-bold text-sm text-[var(--text-primary)]">
+                  Unable to load assessment history
+                </h4>
+                <p className="text-xs text-[var(--text-secondary)] max-w-sm mx-auto">{error}</p>
+                <button
+                  type="button"
+                  onClick={loadData}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-1.5 font-mono text-xs font-semibold text-white hover:opacity-90"
+                >
+                  <RefreshCw size={13} /> Retry
+                </button>
+              </div>
+            ) : combinedAssessments.length > 0 ? (
               <div className="overflow-x-auto rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
                 <table className="w-full text-left font-mono text-xs">
                   <thead className="border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] uppercase">
@@ -539,9 +681,171 @@ export function Performance() {
                 icon={GraduationCap}
                 title="No assessment reports recorded yet"
                 description="Reports capturing average focus, quiz scores, and performance tiers will list chronologically as academic assessments are completed."
+                actionLabel="Record Your First Assessment"
+                onAction={() => {
+                  setShowAddModal(true)
+                  setFormError('')
+                }}
               />
             )}
           </SectionCard>
+        </div>
+      )}
+
+      {/* Record Assessment Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-[var(--border-strong)] bg-[var(--bg-elevated)] p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
+              <div className="flex items-center gap-2">
+                <GraduationCap className="text-[var(--accent-primary)]" size={20} />
+                <h3 className="font-bold text-base text-[var(--text-primary)]">
+                  Record Academic Assessment
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddModal(false)
+                  setFormError('')
+                }}
+                className="rounded-lg p-1 text-[var(--text-secondary)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)]"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {formError && (
+              <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 p-3 font-mono text-xs text-red-600 dark:text-red-400">
+                <AlertCircle size={15} className="shrink-0" />
+                <span>{formError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleRecordAssessment} className="space-y-4 font-mono text-xs">
+              <div>
+                <label className="block font-semibold text-[var(--text-secondary)] mb-1">
+                  Curriculum Subject
+                </label>
+                <select
+                  value={formSubjectId}
+                  onChange={(e) => setFormSubjectId(e.target.value)}
+                  className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
+                >
+                  <option value="">General Assessment (No Subject)</option>
+                  {subjects.map((sub) => (
+                    <option key={sub.id} value={sub.id}>
+                      {sub.name}
+                    </option>
+                  ))}
+                  <option value="NEW_SUBJECT">+ Add New Subject...</option>
+                </select>
+              </div>
+
+              {formSubjectId === 'NEW_SUBJECT' && (
+                <div>
+                  <label className="block font-semibold text-[var(--text-secondary)] mb-1">
+                    New Subject Name
+                  </label>
+                  <input
+                    type="text"
+                    value={newSubjectName}
+                    onChange={(e) => setNewSubjectName(e.target.value)}
+                    placeholder="e.g. Distributed Systems, Calculus"
+                    className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
+                    required
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block font-semibold text-[var(--text-secondary)] mb-1">
+                  Assessment / Quiz Title
+                </label>
+                <input
+                  type="text"
+                  value={formTitle}
+                  onChange={(e) => setFormTitle(e.target.value)}
+                  placeholder="e.g. Midterm Quiz 1, Weekly Lab Test"
+                  className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-[var(--text-secondary)] mb-1">
+                    Score Achieved
+                  </label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    value={formScore}
+                    onChange={(e) => setFormScore(e.target.value)}
+                    placeholder="e.g. 85"
+                    className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-[var(--text-secondary)] mb-1">
+                    Max Scale
+                  </label>
+                  <input
+                    type="number"
+                    step="1"
+                    min="1"
+                    value={formMaxScore}
+                    onChange={(e) => setFormMaxScore(e.target.value)}
+                    placeholder="100"
+                    className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-[var(--text-secondary)] mb-1">
+                  Assessment Date
+                </label>
+                <input
+                  type="date"
+                  value={formDate}
+                  onChange={(e) => setFormDate(e.target.value)}
+                  className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddModal(false)
+                    setFormError('')
+                  }}
+                  className="rounded-lg border border-[var(--border-subtle)] px-4 py-2 font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]"
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-4 py-2 font-semibold text-white shadow hover:opacity-90 disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>Save Assessment</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

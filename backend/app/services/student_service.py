@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -20,6 +20,7 @@ from app.models.entities import (
 )
 from app.schemas.student import (
     CounterfactualSimulationRequest,
+    PerformanceReportCreate,
     QuizCreate,
     RecentActivityItem,
     RecommendationEventCreate,
@@ -783,10 +784,11 @@ def run_session_counterfactual_simulation(
 def list_student_quizzes(student_id: UUID, db: Session) -> list[Quiz]:
     items = db.scalars(
         select(Quiz)
+        .options(joinedload(Quiz.performance_reports))
         .join(Subject, Quiz.subject_id == Subject.id)
         .where(Subject.student_id == student_id)
         .order_by(Quiz.created_at.desc())
-    ).all()
+    ).unique().all()
     return list(items)
 
 
@@ -805,6 +807,12 @@ def create_student_quiz(
             detail="Subject not found or does not belong to the student",
         )
 
+    if data.score is not None and data.max_score is not None and data.score > data.max_score:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Score ({data.score}) cannot exceed max_score ({data.max_score})",
+        )
+
     quiz = Quiz(
         id=uuid.uuid4(),
         subject_id=data.subject_id,
@@ -812,18 +820,112 @@ def create_student_quiz(
         quiz_date=data.quiz_date,
     )
     db.add(quiz)
+
+    if data.score is not None:
+        measured = (
+            datetime.combine(data.quiz_date, datetime.min.time(), tzinfo=timezone.utc)
+            if data.quiz_date
+            else datetime.now(timezone.utc)
+        )
+        report = PerformanceReport(
+            id=uuid.uuid4(),
+            student_id=student_id,
+            quiz_id=quiz.id,
+            score=data.score,
+            max_score=data.max_score or 100.0,
+            performance_metric=data.title,
+            measured_at=measured,
+            metadata_json={"source": "quiz_submission", "subject_id": str(data.subject_id)},
+        )
+        db.add(report)
+
     db.commit()
     db.refresh(quiz)
+    if data.score is not None:
+        quiz._score = data.score
+        quiz._max_score = data.max_score or 100.0
     return quiz
 
 
+def create_performance_report(
+    student_id: UUID, data: PerformanceReportCreate, db: Session
+) -> PerformanceReport:
+    if data.score > data.max_score:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Score ({data.score}) cannot exceed max_score ({data.max_score})",
+        )
+
+    quiz_id = data.quiz_id
+    if quiz_id:
+        quiz = db.scalar(
+            select(Quiz)
+            .join(Subject, Quiz.subject_id == Subject.id)
+            .where(Quiz.id == quiz_id, Subject.student_id == student_id)
+        )
+        if not quiz:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Quiz not found or does not belong to the student",
+            )
+    elif data.subject_id:
+        subject = db.scalar(
+            select(Subject).where(
+                Subject.id == data.subject_id, Subject.student_id == student_id
+            )
+        )
+        if not subject:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Subject not found or does not belong to the student",
+            )
+        quiz = Quiz(
+            id=uuid.uuid4(),
+            subject_id=data.subject_id,
+            title=data.performance_metric,
+            quiz_date=data.measured_at.date() if data.measured_at else date.today(),
+        )
+        db.add(quiz)
+        db.flush()
+        quiz_id = quiz.id
+
+    if data.study_session_id:
+        get_study_session(data.study_session_id, student_id, db)
+
+    metadata = dict(data.metadata_json or {})
+    if data.subject_id and "subject_id" not in metadata:
+        metadata["subject_id"] = str(data.subject_id)
+
+    report = PerformanceReport(
+        id=uuid.uuid4(),
+        student_id=student_id,
+        study_session_id=data.study_session_id,
+        quiz_id=quiz_id,
+        score=data.score,
+        max_score=data.max_score,
+        performance_metric=data.performance_metric,
+        measured_at=data.measured_at or datetime.now(timezone.utc),
+        metadata_json=metadata,
+    )
+    db.add(report)
+    db.commit()
+    db.refresh(report)
+    return report
+
+
 def list_performance_reports(
-    student_id: UUID, db: Session
+    student_id: UUID, db: Session, limit: int = 50, offset: int = 0
 ) -> list[PerformanceReport]:
     items = db.scalars(
         select(PerformanceReport)
+        .options(
+            joinedload(PerformanceReport.quiz).joinedload(Quiz.subject),
+            joinedload(PerformanceReport.study_session).joinedload(StudySession.subject),
+        )
         .where(PerformanceReport.student_id == student_id)
         .order_by(PerformanceReport.measured_at.desc())
+        .offset(offset)
+        .limit(limit)
     ).all()
     return list(items)
 
@@ -832,7 +934,12 @@ def get_performance_report(
     report_id: UUID, student_id: UUID, db: Session
 ) -> PerformanceReport:
     report = db.scalar(
-        select(PerformanceReport).where(
+        select(PerformanceReport)
+        .options(
+            joinedload(PerformanceReport.quiz).joinedload(Quiz.subject),
+            joinedload(PerformanceReport.study_session).joinedload(StudySession.subject),
+        )
+        .where(
             PerformanceReport.id == report_id,
             PerformanceReport.student_id == student_id,
         )

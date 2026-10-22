@@ -9,6 +9,7 @@ from app.schemas.student import (
     BehaviourAnalysisResponse,
     CounterfactualSimulationRequest,
     CounterfactualSimulationResponse,
+    PerformanceReportCreate,
     PerformanceReportResponse,
     QuizCreate,
     QuizResponse,
@@ -278,11 +279,29 @@ def get_behaviour(
     summary="List performance reports",
 )
 def list_performance(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     current_user: AuthenticatedUser = Depends(require_student),
     db: Session = Depends(get_db),
 ) -> list[PerformanceReportResponse]:
     return student_service.list_performance_reports(
-        current_user.student_id, db  # type: ignore[arg-type]
+        current_user.student_id, db, limit=limit, offset=offset  # type: ignore[arg-type]
+    )
+
+
+@student_router.post(
+    "/performance",
+    response_model=PerformanceReportResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Record a performance assessment report",
+)
+def create_performance(
+    data: PerformanceReportCreate,
+    current_user: AuthenticatedUser = Depends(require_student),
+    db: Session = Depends(get_db),
+) -> PerformanceReportResponse:
+    return student_service.create_performance_report(
+        current_user.student_id, data, db  # type: ignore[arg-type]
     )
 
 

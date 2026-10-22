@@ -129,6 +129,11 @@ export async function getStudentPerformance(params = {}) {
   return response.data
 }
 
+export async function createStudentPerformance(reportData) {
+  const response = await api.post('/api/v1/student/performance', reportData)
+  return response.data
+}
+
 // Subjects & Quizzes
 export async function getStudentSubjects() {
   const response = await api.get('/api/v1/student/subjects')

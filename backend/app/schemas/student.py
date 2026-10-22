@@ -182,6 +182,8 @@ class QuizCreate(BaseModel):
     subject_id: UUID
     title: str = Field(..., min_length=1, max_length=200)
     quiz_date: date | None = None
+    score: float | None = Field(default=None, ge=0.0)
+    max_score: float | None = Field(default=100.0, gt=0.0)
 
 
 class QuizResponse(BaseModel):
@@ -191,12 +193,25 @@ class QuizResponse(BaseModel):
     subject_id: UUID
     title: str
     quiz_date: date | None = None
+    score: float | None = None
+    max_score: float | None = None
     created_at: datetime
 
 
 # ---------------------------------------------------------------------------
 # Performance Report Schemas
 # ---------------------------------------------------------------------------
+class PerformanceReportCreate(BaseModel):
+    subject_id: UUID | None = None
+    study_session_id: UUID | None = None
+    quiz_id: UUID | None = None
+    score: float = Field(..., ge=0.0)
+    max_score: float = Field(default=100.0, gt=0.0)
+    performance_metric: str = Field(default="Quiz Score", min_length=1, max_length=100)
+    measured_at: datetime | None = None
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+
+
 class PerformanceReportResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -209,6 +224,7 @@ class PerformanceReportResponse(BaseModel):
     performance_metric: str
     measured_at: datetime
     metadata_json: dict[str, Any]
+    subject_name: str | None = None
 
 
 # ---------------------------------------------------------------------------
