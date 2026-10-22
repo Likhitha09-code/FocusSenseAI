@@ -3,7 +3,7 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -38,6 +38,10 @@ class StudySessionUpdate(BaseModel):
     ended_at: datetime | None = None
     status: str | None = Field(default=None, pattern="^(planned|active|completed|cancelled)$")
     subject_id: UUID | None = None
+    auto_record_activity: bool = Field(
+        default=False,
+        description="If True when concluding an active session with 0 activities, records a study activity for elapsed session duration.",
+    )
 
 
 class StudySessionResponse(BaseModel):
@@ -65,16 +69,37 @@ class StudySessionListResponse(BaseModel):
 class StudyActivityCreate(BaseModel):
     activity_type: str = Field(
         ...,
-        pattern="^(study|productive|distraction|break|other|coding|app_focus)$",
-        description="Controlled activity classification category",
+        pattern="^(?i)(study|productive|distraction|break|other|coding|app_focus|interruption|tab_switch|focus_loss|heartbeat|unknown)$",
+        description="Controlled activity classification category including real-time web and extension telemetry",
     )
-
-
     application_name: str | None = Field(default=None, max_length=200)
     duration_seconds: float | None = Field(default=None, ge=0.0)
     occurred_at: datetime | None = None
     numeric_value: float | None = Field(default=None, ge=0.0)
     metadata_json: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("activity_type", mode="before")
+    @classmethod
+    def sanitize_activity_type(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return v.strip().lower()
+        return v
+
+    @field_validator("application_name", mode="before")
+    @classmethod
+    def sanitize_application_name(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return v.strip()[:200]
+        return v
+
+    @field_validator("metadata_json", mode="before")
+    @classmethod
+    def sanitize_metadata_json(cls, v: Any) -> dict[str, Any]:
+        if v is None:
+            return {}
+        if isinstance(v, dict):
+            return v
+        return {}
 
 
 class StudyActivityResponse(BaseModel):
@@ -95,6 +120,9 @@ class SessionActivitySummaryResponse(BaseModel):
     productive_duration_seconds: float
     distraction_duration_seconds: float
     break_duration_seconds: float
+    unknown_duration_seconds: float = 0.0
+    interruption_duration_seconds: float = 0.0
+    interruption_count: int = 0
     productive_percentage: float
     distraction_percentage: float
     activity_count: int
@@ -121,6 +149,30 @@ class BehaviourAnalysisResponse(BaseModel):
     analyzed_at: datetime
     session_started_at: datetime | None = None
     subject_name: str | None = None
+
+
+class CounterfactualSimulationRequest(BaseModel):
+    analysis_id: UUID
+    productive_duration: float | None = Field(default=None, ge=0.0, le=86400.0)
+    distraction_duration: float | None = Field(default=None, ge=0.0, le=86400.0)
+    break_duration: float | None = Field(default=None, ge=0.0, le=86400.0)
+    activity_switch_count: int | None = Field(default=None, ge=0, le=500)
+    unique_application_count: int | None = Field(default=None, ge=1, le=100)
+
+
+class CounterfactualSimulationResponse(BaseModel):
+    analysis_id: UUID
+    study_session_id: UUID
+    is_hypothetical: bool = True
+    model_version: str
+    allowed_bounds: dict[str, dict[str, float | int]]
+    baseline_features: dict[str, Any]
+    modified_features: dict[str, Any]
+    baseline_predictions: dict[str, Any]
+    simulated_predictions: dict[str, Any]
+    deltas: dict[str, Any]
+    explanation_summary: str
+
 
 
 # ---------------------------------------------------------------------------
@@ -224,10 +276,33 @@ class RecommendationGenerateRequest(BaseModel):
     session_id: UUID
 
 
+class RecommendationTypeEffectiveness(BaseModel):
+    recommendation_type: str
+    title: str
+    total_issued: int
+    times_followed: int
+    times_not_followed: int
+    measured_outcomes_count: int
+    average_focus_delta: float | None = None
+    effectiveness_rating: str
+    score_adjustment: float
+
+
+class RecommendationEffectivenessResponse(BaseModel):
+    student_id: UUID
+    total_recommendations_issued: int
+    total_outcomes_recorded: int
+    total_measured_deltas: int
+    average_overall_focus_delta: float | None = None
+    positive_outcomes_count: int
+    adherence_rate: float | None = None
+    type_breakdown: list[RecommendationTypeEffectiveness]
+
+
 class RecommendationHistoryItemResponse(BaseModel):
     id: UUID
     student_id: UUID
-    source_session_id: UUID
+    source_session_id: UUID | None = None
     recommendation_id: UUID
     recommendation_type: str
     title: str
@@ -266,6 +341,9 @@ class SubjectPerformanceItem(BaseModel):
     subject_name: str
     average_score: float | None = None
     total_quizzes: int = 0
+    total_study_minutes: int = 0
+    total_sessions: int = 0
+    average_focus_score: float | None = None
 
 
 class RecommendationSummaryItem(BaseModel):

@@ -7,7 +7,7 @@ export function StudentLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f5f1e8] text-[#17221c]">
+    <div className="flex h-screen w-full overflow-hidden bg-[var(--bg-canvas)] text-[var(--text-primary)]">
       {/* Sidebar (Desktop + Mobile Drawer) */}
       <StudentSidebar
         isOpen={mobileMenuOpen}
@@ -15,11 +15,11 @@ export function StudentLayout() {
       />
 
       {/* Main Content Column */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <StudentHeader onMenuClick={() => setMobileMenuOpen(true)} />
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-8">
-          <div className="mx-auto max-w-6xl">
+        <main className="flex-1 overflow-x-hidden overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
+          <div className="mx-auto w-full max-w-7xl">
             <Outlet />
           </div>
         </main>
@@ -27,4 +27,5 @@ export function StudentLayout() {
     </div>
   )
 }
+
 

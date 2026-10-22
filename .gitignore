@@ -31,3 +31,4 @@ Thumbs.db
 ml/artifacts/
 ml/models/artifacts/*.joblib
 ml/data/*.csv
+database/backups/

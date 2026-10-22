@@ -37,6 +37,11 @@ api.interceptors.response.use(
         console.warn('API 401: Authentication required or session expired:', data?.detail || 'Unauthorized')
       } else if (status === 403) {
         console.warn('API 403: Forbidden or insufficient role:', data?.detail || 'Forbidden')
+      } else if (status === 422) {
+        const details = Array.isArray(data?.detail)
+          ? data.detail.map((err) => `${err.loc?.slice(1).join('.') || err.loc?.join('.') || 'field'}: ${err.msg}`).join('; ')
+          : (typeof data?.detail === 'string' ? data.detail : JSON.stringify(data?.detail || 'Validation error'))
+        console.warn('API 422 Validation Error:', details)
       }
     }
     return Promise.reject(error)
@@ -113,6 +118,11 @@ export async function getStudentBehaviourAnalysis(params = {}) {
   return response.data
 }
 
+export async function simulateCounterfactual(simulationData) {
+  const response = await api.post('/api/v1/student/behaviour/counterfactual', simulationData)
+  return response.data
+}
+
 // Performance Reports
 export async function getStudentPerformance(params = {}) {
   const response = await api.get('/api/v1/student/performance', { params })
@@ -153,7 +163,7 @@ export async function createRecommendationEvent(eventData) {
 }
 
 export async function recordRecommendationOutcome(eventId, outcomeData) {
-  const response = await api.post(`/api/v1/student/recommendations/events/${eventId}/outcomes`, outcomeData)
+  const response = await api.post(`/api/v1/student/recommendations/events/${eventId}/outcome`, outcomeData)
   return response.data
 }
 
@@ -171,4 +181,49 @@ export async function getLatestStudentRecommendation() {
   const response = await api.get('/api/v1/student/recommendations/latest')
   return response.data
 }
+
+export async function getStudentRecommendationEffectiveness() {
+  const response = await api.get('/api/v1/student/recommendations/effectiveness')
+  return response.data
+}
+
+// Parent Portal & Student Consent Management
+export async function getLinkedStudents() {
+  const response = await api.get('/api/v1/parent/students')
+  return response.data
+}
+
+export async function linkStudentToParent(studentId) {
+  const response = await api.post('/api/v1/parent/students/link', { student_id: studentId })
+  return response.data
+}
+
+export async function getParentStudentProgress(studentId) {
+  const response = await api.get(`/api/v1/parent/students/${studentId}/progress`)
+  return response.data
+}
+
+export async function unlinkStudentFromParent(studentId) {
+  const response = await api.delete(`/api/v1/parent/students/${studentId}`)
+  return response.data
+}
+
+export async function getStudentParentLinks() {
+  const response = await api.get('/api/v1/student/parent-links')
+  return response.data
+}
+
+export async function updateParentConsent(linkId, consentStatus) {
+  const response = await api.patch(`/api/v1/student/parent-links/${linkId}/consent`, {
+    consent_status: consentStatus,
+  })
+  return response.data
+}
+
+export async function removeParentLink(linkId) {
+  const response = await api.delete(`/api/v1/student/parent-links/${linkId}`)
+  return response.data
+}
+
+
 

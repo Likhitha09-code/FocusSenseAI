@@ -25,6 +25,7 @@ class AuthTokenPayload:
 
     auth_user_id: UUID
     email: str | None = None
+    user_metadata: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -75,9 +76,82 @@ def get_current_auth_token_user(
         return AuthTokenPayload(
             auth_user_id=UUID(payload["id"]),
             email=payload.get("email"),
+            user_metadata=payload.get("user_metadata") or {},
         )
     except (SupabaseConfigurationError, KeyError, ValueError) as error:
         raise _unauthorized("Invalid or unverifiable access token") from error
+
+
+def _parse_bounded_int(value: object, min_val: int, max_val: int) -> int | None:
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return parsed if min_val <= parsed <= max_val else None
+
+
+def _auto_provision_from_metadata(
+    auth_payload: AuthTokenPayload, db: Session
+) -> AuthenticatedUser | None:
+    """Auto-provision a Student or Parent profile if verified Supabase user_metadata contains registration info."""
+    metadata = auth_payload.user_metadata or {}
+    if not isinstance(metadata, dict):
+        return None
+
+    raw_role = str(metadata.get("role") or "").strip().lower()
+    raw_name = str(metadata.get("name") or metadata.get("display_name") or "").strip()
+    if not raw_name or len(raw_name) > 200:
+        return None
+
+    if raw_role == UserRole.STUDENT.value:
+        raw_dept = metadata.get("department")
+        department = str(raw_dept).strip()[:100] if raw_dept and str(raw_dept).strip() else None
+        semester = _parse_bounded_int(metadata.get("semester"), 1, 10)
+        academic_year = _parse_bounded_int(metadata.get("academic_year"), 1, 5)
+        raw_tz = metadata.get("timezone")
+        timezone = str(raw_tz).strip()[:100] if raw_tz and str(raw_tz).strip() else "UTC"
+
+        student = Student(
+            auth_user_id=auth_payload.auth_user_id,
+            display_name=raw_name,
+            department=department,
+            semester=semester,
+            academic_year=academic_year,
+            timezone=timezone,
+        )
+        db.add(student)
+        db.commit()
+        db.refresh(student)
+        return AuthenticatedUser(
+            auth_user_id=auth_payload.auth_user_id,
+            role=UserRole.STUDENT,
+            student_id=student.id,
+            parent_id=None,
+            email=auth_payload.email,
+            display_name=student.display_name,
+            department=student.department,
+            semester=student.semester,
+            academic_year=student.academic_year,
+        )
+
+    if raw_role == UserRole.PARENT.value:
+        parent = Parent(
+            auth_user_id=auth_payload.auth_user_id,
+            display_name=raw_name,
+        )
+        db.add(parent)
+        db.commit()
+        db.refresh(parent)
+        return AuthenticatedUser(
+            auth_user_id=auth_payload.auth_user_id,
+            role=UserRole.PARENT,
+            student_id=None,
+            parent_id=parent.id,
+            email=auth_payload.email,
+            display_name=parent.display_name,
+        )
+
+    return None
 
 
 def resolve_application_profile(auth_payload: AuthTokenPayload, db: Session) -> AuthenticatedUser:
@@ -111,6 +185,11 @@ def resolve_application_profile(auth_payload: AuthTokenPayload, db: Session) -> 
             email=auth_payload.email,
             display_name=parent.display_name,
         )
+
+    provisioned_user = _auto_provision_from_metadata(auth_payload, db)
+    if provisioned_user is not None:
+        return provisioned_user
+
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Application profile not found. Please complete profile registration.",

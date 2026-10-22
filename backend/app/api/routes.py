@@ -17,6 +17,7 @@ from app.schemas.auth import (
     UserProfileResponse,
 )
 from app.api.student_routes import student_router
+from app.api.parent_routes import parent_router, parent_consent_router
 from app.services.profile_provisioning import create_parent_profile, create_student_profile
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
@@ -111,3 +112,5 @@ def test_parent_access(parent_user: AuthenticatedUser = Depends(require_parent))
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth_router)
 api_router.include_router(student_router)
+api_router.include_router(parent_router)
+api_router.include_router(parent_consent_router)

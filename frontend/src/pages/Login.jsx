@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Brain, Lock, Mail } from 'lucide-react'
+import { AlertCircle, ArrowRight, Brain, Lock, Loader2, Mail, Moon, Sun } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
 
 export function Login() {
   const navigate = useNavigate()
   const { login, error: authError } = useAuth()
+  const { theme, toggleTheme } = useTheme()
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -31,42 +34,69 @@ export function Login() {
     }
   }
 
+  const activeError = localError || authError
+
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#f5f1e8] px-6 py-12 text-[#17221c]">
-      <div className="w-full max-w-md">
-        {/* Brand Header */}
-        <div className="mb-8 text-center">
-          <Link to="/" className="inline-flex items-center gap-3">
-            <div className="grid size-10 place-items-center rounded-full bg-[#d7e65a]">
-              <Brain size={21} strokeWidth={2.5} />
-            </div>
-            <span className="font-mono text-sm font-bold tracking-[0.18em] uppercase">
-              FocusSense AI
-            </span>
-          </Link>
-          <h1 className="mt-6 font-serif text-3xl font-bold tracking-tight">Sign In</h1>
-          <p className="mt-2 text-sm text-[#405047]">
-            Enter your credentials to access your study identity.
-          </p>
-        </div>
-
-        {/* Error Alert */}
-        {(localError || authError) && (
-          <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-xs font-medium text-red-800">
-            {localError || authError}
-          </div>
-        )}
-
-        {/* Form */}
-        <form
-          onSubmit={handleSubmit}
-          className="rounded-xl border border-[#17221c]/20 bg-white p-8 shadow-sm"
+    <main className="flex min-h-screen flex-col justify-between bg-[var(--bg-canvas)] px-4 py-8 text-[var(--text-primary)] transition-colors sm:px-6 lg:px-8">
+      {/* Top Navbar Bar with Home Link & Theme Toggle */}
+      <div className="mx-auto flex w-full max-w-md items-center justify-between pb-6">
+        <Link
+          to="/"
+          className="flex items-center gap-2.5 transition hover:opacity-85"
         >
-          <div className="space-y-4">
+          <div className="grid size-9 place-items-center rounded-xl bg-[var(--accent-soft)] border border-[var(--accent-border)] text-[var(--accent-primary)] shadow-sm">
+            <Brain size={20} strokeWidth={2.5} />
+          </div>
+          <span className="font-mono text-xs font-bold tracking-widest text-[var(--text-primary)] uppercase">
+            FocusSense AI
+          </span>
+        </Link>
+
+        <button
+          type="button"
+          onClick={toggleTheme}
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2.5 py-1.5 font-mono text-xs font-medium text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+        >
+          {theme === 'dark' ? (
+            <Sun size={14} className="text-[var(--status-warning)]" />
+          ) : (
+            <Moon size={14} className="text-[var(--accent-primary)]" />
+          )}
+          <span className="text-[11px] font-mono capitalize">{theme}</span>
+        </button>
+      </div>
+
+      {/* Main Form Card Container */}
+      <div className="mx-auto w-full max-w-md">
+        <div className="rounded-2xl border border-[var(--border-strong)] bg-[var(--bg-surface)] p-6 shadow-xl sm:p-8">
+          {/* Header */}
+          <div className="mb-6">
+            <span className="font-mono text-xs font-bold uppercase tracking-widest text-[var(--accent-primary)]">
+              Welcome Back
+            </span>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-[var(--text-primary)] sm:text-3xl">
+              Sign In to Your Identity
+            </h1>
+            <p className="mt-2 text-xs leading-relaxed text-[var(--text-secondary)]">
+              Enter your verified email and password to access your study portal.
+            </p>
+          </div>
+
+          {/* Error Banner */}
+          {activeError && (
+            <div className="mb-6 flex items-start gap-3 rounded-xl border border-[var(--status-danger-border)] bg-[var(--status-danger-soft)] p-3.5 text-xs text-[var(--status-danger)]">
+              <AlertCircle size={16} className="mt-0.5 shrink-0" />
+              <div className="font-medium leading-relaxed">{activeError}</div>
+            </div>
+          )}
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label
                 htmlFor="email"
-                className="block font-mono text-xs font-bold tracking-wider text-[#4e6656] uppercase"
+                className="block font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]"
               >
                 Email Address
               </label>
@@ -75,64 +105,82 @@ export function Login() {
                   id="email"
                   type="email"
                   required
+                  autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="student@university.edu"
-                  className="w-full rounded-lg border border-[#17221c]/20 bg-[#fbf9f4] px-3.5 py-2.5 pl-10 text-sm text-[#17221c] outline-none transition focus:border-[#17221c] focus:bg-white"
+                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3.5 py-2.5 pl-10 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none transition focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] focus:ring-1 focus:ring-[var(--focus-ring)]"
                 />
                 <Mail
                   size={16}
-                  className="pointer-events-none absolute top-3 left-3 text-[#17221c]/40"
+                  className="pointer-events-none absolute top-3 left-3 text-[var(--text-muted)]"
                 />
               </div>
             </div>
 
             <div>
-              <label
-                htmlFor="password"
-                className="block font-mono text-xs font-bold tracking-wider text-[#4e6656] uppercase"
-              >
-                Password
-              </label>
+              <div className="flex items-center justify-between">
+                <label
+                  htmlFor="password"
+                  className="block font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]"
+                >
+                  Password
+                </label>
+              </div>
               <div className="relative mt-1.5">
                 <input
                   id="password"
                   type="password"
                   required
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full rounded-lg border border-[#17221c]/20 bg-[#fbf9f4] px-3.5 py-2.5 pl-10 text-sm text-[#17221c] outline-none transition focus:border-[#17221c] focus:bg-white"
+                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3.5 py-2.5 pl-10 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none transition focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] focus:ring-1 focus:ring-[var(--focus-ring)]"
                 />
                 <Lock
                   size={16}
-                  className="pointer-events-none absolute top-3 left-3 text-[#17221c]/40"
+                  className="pointer-events-none absolute top-3 left-3 text-[var(--text-muted)]"
                 />
               </div>
             </div>
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent-primary)] py-3 font-mono text-xs font-bold text-[var(--accent-contrast)] uppercase tracking-wider transition hover:bg-[var(--accent-hover)] shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 size={15} className="animate-spin" />
+                  <span>Authenticating...</span>
+                </>
+              ) : (
+                <>
+                  <span>Sign In to Portal</span>
+                  <ArrowRight size={15} />
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* Footer Register Link */}
+          <div className="mt-6 border-t border-[var(--border-subtle)] pt-5 text-center text-xs text-[var(--text-secondary)]">
+            <span>Don&apos;t have an account yet? </span>
+            <Link
+              to="/register"
+              className="font-semibold text-[var(--accent-primary)] underline underline-offset-2 transition hover:text-[var(--accent-hover)]"
+            >
+              Register here
+            </Link>
           </div>
-
-          <button
-            type="submit"
-            disabled={submitting}
-            className="mt-6 flex w-full items-center justify-center rounded-lg bg-[#17221c] py-2.5 font-mono text-xs font-bold tracking-wider text-[#f5f1e8] uppercase transition hover:bg-[#2b3a32] disabled:opacity-50"
-          >
-            {submitting ? 'Authenticating...' : 'Sign In'}
-          </button>
-        </form>
-
-        {/* Footer Link */}
-        <div className="mt-6 text-center text-xs text-[#405047]">
-          <span>Don't have an account? </span>
-          <Link
-            to="/register"
-            className="font-semibold text-[#17221c] underline underline-offset-2 hover:text-[#4e6656]"
-          >
-            Register here
-          </Link>
         </div>
+      </div>
+
+      {/* Footer Info */}
+      <div className="mx-auto mt-8 w-full max-w-md text-center font-mono text-[11px] text-[var(--text-muted)]">
+        <span>Protected by Supabase Auth & FocusSense AI Security</span>
       </div>
     </main>
   )
 }
-

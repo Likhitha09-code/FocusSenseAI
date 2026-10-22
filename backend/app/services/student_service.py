@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -18,6 +19,7 @@ from app.models.entities import (
     Subject,
 )
 from app.schemas.student import (
+    CounterfactualSimulationRequest,
     QuizCreate,
     RecentActivityItem,
     RecommendationEventCreate,
@@ -127,12 +129,43 @@ def get_student_dashboard_summary(
                 if scores:
                     avg_score = round(sum(scores) / len(scores), 1)
 
+        # Study sessions and behavioural focus metrics for this subject
+        subj_sessions = db.scalars(
+            select(StudySession).where(
+                StudySession.student_id == student_id,
+                StudySession.subject_id == subj.id,
+            )
+        ).all()
+        subj_minutes = 0
+        for ss in subj_sessions:
+            if ss.ended_at and ss.started_at and ss.ended_at >= ss.started_at:
+                subj_minutes += int((ss.ended_at - ss.started_at).total_seconds() / 60)
+
+        subj_sess_ids = [ss.id for ss in subj_sessions]
+        subj_focus_scores: list[float] = []
+        if subj_sess_ids:
+            subj_analyses = db.scalars(
+                select(BehaviouralAnalysis).where(
+                    BehaviouralAnalysis.study_session_id.in_(subj_sess_ids)
+                )
+            ).all()
+            subj_focus_scores = [a.focus_score for a in subj_analyses if a.focus_score is not None]
+
+        subj_avg_focus = (
+            round(sum(subj_focus_scores) / len(subj_focus_scores), 1)
+            if subj_focus_scores
+            else None
+        )
+
         subject_items.append(
             SubjectPerformanceItem(
                 subject_id=subj.id,
                 subject_name=subj.name,
                 average_score=avg_score,
                 total_quizzes=len(subj_quizzes),
+                total_study_minutes=subj_minutes,
+                total_sessions=len(subj_sessions),
+                average_focus_score=subj_avg_focus,
             )
         )
 
@@ -293,11 +326,60 @@ def update_study_session(
     if data.ended_at is not None:
         session.ended_at = data.ended_at
 
+    # If auto_record_activity is requested when concluding an active session with 0 activities:
+    if data.auto_record_activity and (data.status == "completed" or (data.status is None and session.status == "completed")):
+        existing_count = db.scalar(
+            select(func.count(StudyActivity.id)).where(StudyActivity.study_session_id == session_id)
+        ) or 0
+        if existing_count == 0 and session.status == "active":
+            def _to_utc(dt: datetime | None) -> datetime:
+                if dt is None:
+                    return datetime.now(timezone.utc)
+                if dt.tzinfo is None:
+                    return dt.replace(tzinfo=timezone.utc)
+                return dt.astimezone(timezone.utc)
+
+            ended = _to_utc(session.ended_at)
+            started = _to_utc(session.started_at)
+            dur_seconds = max(0.0, (ended - started).total_seconds())
+            if dur_seconds > 0.0:
+                subj_name = session.subject.name if session.subject else "General Study"
+                activity = StudyActivity(
+                    id=uuid.uuid4(),
+                    study_session_id=session.id,
+                    activity_type="productive",
+                    occurred_at=started,
+                    numeric_value=round(dur_seconds, 1),
+                    metadata_json={"application_name": subj_name, "auto_recorded": True},
+                )
+                db.add(activity)
+
     if data.status is not None:
         session.status = data.status
 
     db.commit()
     db.refresh(session)
+
+    # If session concluded, auto-generate behavioural analysis & recommendation if telemetry exists
+    if session.status == "completed":
+        try:
+            from app.services import recommendation_service
+
+            acts = db.scalars(
+                select(StudyActivity).where(StudyActivity.study_session_id == session.id)
+            ).all()
+            dur = sum(float(a.numeric_value or 0.0) for a in acts)
+            if len(acts) > 0 and dur > 0.0:
+                generate_session_behaviour_analysis(session.id, student_id, db)
+                recommendation_service.generate_student_recommendation(
+                    student_id, session.id, db
+                )
+                recommendation_service.evaluate_pending_outcomes_for_session(
+                    student_id, session.id, db
+                )
+        except Exception:
+            pass
+
     return session
 
 
@@ -324,10 +406,21 @@ def create_study_activity(
 
     duration = data.duration_seconds if data.duration_seconds is not None else data.numeric_value
 
+    # Idempotency / duplicate check for client-supplied event_id
+    client_event_id = metadata.get("event_id") or metadata.get("client_event_id")
+    if client_event_id:
+        existing_activities = db.scalars(
+            select(StudyActivity).where(StudyActivity.study_session_id == session_id)
+        ).all()
+        for existing in existing_activities:
+            m = existing.metadata_json or {}
+            if str(m.get("client_event_id") or m.get("event_id")) == str(client_event_id):
+                return existing
+
     activity = StudyActivity(
         id=uuid.uuid4(),
         study_session_id=session_id,
-        activity_type=data.activity_type,
+        activity_type=data.activity_type.lower(),
         occurred_at=data.occurred_at or datetime.now(timezone.utc),
         numeric_value=duration,
         metadata_json=metadata,
@@ -357,7 +450,8 @@ def aggregate_session_activities(
 ) -> dict[str, Any]:
     """Calculate deterministic summary metrics for activities in a study session.
 
-    Does NOT calculate fake focus scores or run ML models.
+    Reconciles real-time web telemetry and browser extension activity streams
+    without inventing fake focus scores or double-counting durations.
     """
     activities = list_study_activities(session_id, student_id, db)
 
@@ -365,6 +459,9 @@ def aggregate_session_activities(
     productive_duration = 0.0
     distraction_duration = 0.0
     break_duration = 0.0
+    unknown_duration = 0.0
+    interruption_duration = 0.0
+    interruption_count = 0
 
     apps_seen = set()
     prev_type: str | None = None
@@ -376,18 +473,25 @@ def aggregate_session_activities(
         total_duration += dur
 
         act_type = (act.activity_type or "").lower()
-        if act_type in ("study", "productive"):
+        if act_type in ("study", "productive", "coding", "app_focus"):
             productive_duration += dur
-        elif act_type == "distraction":
+        elif act_type in ("distraction", "interruption"):
             distraction_duration += dur
+            interruption_duration += dur
+            interruption_count += 1
         elif act_type == "break":
             break_duration += dur
+        elif act_type in ("focus_loss", "tab_switch", "other", "unknown"):
+            unknown_duration += dur
+            interruption_duration += dur
+            interruption_count += 1
 
-        app_name = (act.metadata_json or {}).get("application_name") or (act.metadata_json or {}).get("app")
+        app_name = (act.metadata_json or {}).get("application_name") or (act.metadata_json or {}).get("app") or (act.metadata_json or {}).get("domain")
         if app_name:
             apps_seen.add(app_name)
 
-        if prev_type is not None and (act_type != prev_type or (app_name and app_name != prev_app)):
+        is_tab_switch_event = (act.metadata_json or {}).get("event_type") == "tab_switch" or act_type == "tab_switch"
+        if prev_type is not None and (act_type != prev_type or (app_name and app_name != prev_app) or is_tab_switch_event):
             switch_count += 1
 
         prev_type = act_type
@@ -402,6 +506,9 @@ def aggregate_session_activities(
         "productive_duration_seconds": round(productive_duration, 1),
         "distraction_duration_seconds": round(distraction_duration, 1),
         "break_duration_seconds": round(break_duration, 1),
+        "unknown_duration_seconds": round(unknown_duration, 1),
+        "interruption_duration_seconds": round(interruption_duration, 1),
+        "interruption_count": interruption_count,
         "productive_percentage": prod_pct,
         "distraction_percentage": dist_pct,
         "activity_count": len(activities),
@@ -508,6 +615,7 @@ def generate_session_behaviour_analysis(
 
     # 3. Call ML Prediction Service
     predictions = ml_service.predict_behaviour(enriched_features)
+    shap_data = ml_service.calculate_feature_attributions(enriched_features, target="focus_score")
 
     # 4. Save/Update DB Record
     existing = db.scalar(
@@ -520,6 +628,7 @@ def generate_session_behaviour_analysis(
         existing.focus_score = predictions["focus_score"]
         existing.distraction_level = predictions["distraction_level"]
         existing.performance_prediction = predictions["performance_prediction"]
+        existing.shap_values = shap_data
         existing.model_version = predictions["model_version"]
         db.commit()
         db.refresh(existing)
@@ -532,6 +641,7 @@ def generate_session_behaviour_analysis(
         focus_score=predictions["focus_score"],
         distraction_level=predictions["distraction_level"],
         performance_prediction=predictions["performance_prediction"],
+        shap_values=shap_data,
         model_version=predictions["model_version"],
     )
     db.add(analysis)
@@ -568,16 +678,31 @@ def list_behavioural_analyses(
             except Exception:
                 pass
 
-    items = db.scalars(
-        select(BehaviouralAnalysis)
-        .options(joinedload(BehaviouralAnalysis.study_session).joinedload(StudySession.subject))
-        .join(StudySession, BehaviouralAnalysis.study_session_id == StudySession.id)
-        .where(StudySession.student_id == student_id)
-        .order_by(BehaviouralAnalysis.analyzed_at.desc())
-        .offset(offset)
-        .limit(limit)
-    ).all()
-    return list(items)
+    items = list(
+        db.scalars(
+            select(BehaviouralAnalysis)
+            .options(joinedload(BehaviouralAnalysis.study_session).joinedload(StudySession.subject))
+            .join(StudySession, BehaviouralAnalysis.study_session_id == StudySession.id)
+            .where(StudySession.student_id == student_id)
+            .order_by(BehaviouralAnalysis.analyzed_at.desc())
+            .offset(offset)
+            .limit(limit)
+        ).all()
+    )
+
+    for item in items:
+        if item.shap_values is None and item.feature_snapshot:
+            try:
+                from app.services import ml_service
+
+                item.shap_values = ml_service.calculate_feature_attributions(
+                    item.feature_snapshot, target="focus_score"
+                )
+                db.commit()
+            except Exception:
+                pass
+
+    return items
 
 
 def get_behavioural_analysis(
@@ -597,7 +722,58 @@ def get_behavioural_analysis(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Behavioural analysis not found",
         )
+
+    if analysis.shap_values is None and analysis.feature_snapshot:
+        try:
+            from app.services import ml_service
+
+            analysis.shap_values = ml_service.calculate_feature_attributions(
+                analysis.feature_snapshot, target="focus_score"
+            )
+            db.commit()
+            db.refresh(analysis)
+        except Exception:
+            pass
+
     return analysis
+
+
+def run_session_counterfactual_simulation(
+    student_id: UUID, data: CounterfactualSimulationRequest, db: Session
+) -> dict[str, Any]:
+    """Run an interactive counterfactual what-if simulation on an analyzed session.
+
+    Strictly read-only against stored session and analysis records; original
+    predictions and telemetry remain immutable.
+    """
+    from app.services import ml_service
+
+    analysis = get_behavioural_analysis(data.analysis_id, student_id, db)
+
+    adjustments = {
+        "productive_duration": data.productive_duration,
+        "distraction_duration": data.distraction_duration,
+        "break_duration": data.break_duration,
+        "activity_switch_count": data.activity_switch_count,
+        "unique_application_count": data.unique_application_count,
+    }
+
+    try:
+        sim_result = ml_service.simulate_counterfactual(
+            analysis.feature_snapshot or {}, adjustments
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return {
+        "analysis_id": analysis.id,
+        "study_session_id": analysis.study_session_id,
+        "is_hypothetical": True,
+        **sim_result,
+    }
 
 
 

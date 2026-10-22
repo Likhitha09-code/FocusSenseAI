@@ -1,4 +1,5 @@
 from functools import lru_cache
+from urllib.parse import urlsplit
 
 from supabase import Client, create_client
 
@@ -9,12 +10,24 @@ class SupabaseConfigurationError(RuntimeError):
     """Raised when a Supabase operation is attempted without configuration."""
 
 
+def _normalize_supabase_url(raw_url: str) -> str:
+    """Normalize a Supabase URL to the project root origin (stripping /rest/v1 or trailing slashes)."""
+    cleaned = raw_url.strip().rstrip("/")
+    if not cleaned:
+        return ""
+    parts = urlsplit(cleaned)
+    if parts.scheme and parts.netloc:
+        return f"{parts.scheme}://{parts.netloc}"
+    return cleaned
+
+
 def _require_configuration(key: str) -> tuple[str, str]:
-    if not settings.supabase_url:
+    normalized_url = _normalize_supabase_url(settings.supabase_url)
+    if not normalized_url:
         raise SupabaseConfigurationError("SUPABASE_URL must be configured")
     if not key:
         raise SupabaseConfigurationError("A Supabase API key must be configured")
-    return settings.supabase_url, key
+    return normalized_url, key.strip()
 
 
 @lru_cache(maxsize=2)
@@ -51,4 +64,5 @@ def verify_access_token(access_token: str) -> dict:
         "id": str(response.user.id),
         "email": response.user.email,
         "app_metadata": response.user.app_metadata or {},
+        "user_metadata": getattr(response.user, "user_metadata", None) or {},
     }

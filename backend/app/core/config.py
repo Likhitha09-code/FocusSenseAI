@@ -1,4 +1,7 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_BACKEND_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
 class Settings(BaseSettings):
@@ -8,7 +11,10 @@ class Settings(BaseSettings):
     supabase_service_role_key: str = ""
     database_url: str = ""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(str(_BACKEND_ENV_FILE), ".env"),
+        extra="ignore",
+    )
 
 
-settings = Settings()
+settings = Settings()

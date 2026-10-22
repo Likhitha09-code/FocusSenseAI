@@ -1,20 +1,194 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Libre+Baskerville:wght@400;700&family=Manrope:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Libre+Baskerville:wght@400;700&family=Manrope:wght@400;500;600;700;800&display=swap');
 @import 'tailwindcss';
 
-:root {
-  font-family: 'Manrope', sans-serif;
-  color: #17221c;
-  background: #f5f1e8;
+:root,
+:root[data-theme='dark'] {
+  /* Core Surfaces */
+  --bg-canvas: #090d16;
+  --bg-surface: #111726;
+  --bg-elevated: #171f32;
+  --bg-hover: #1e293b;
+  --bg-overlay: rgba(9, 13, 22, 0.72);
+
+  /* Typography Colors */
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  /* Borders */
+  --border-subtle: rgba(148, 163, 184, 0.14);
+  --border-strong: rgba(148, 163, 184, 0.28);
+
+  /* Brand & AI Accents */
+  --accent-primary: #6366f1;
+  --accent-hover: #818cf8;
+  --accent-soft: rgba(99, 102, 241, 0.14);
+  --accent-border: rgba(99, 102, 241, 0.36);
+  --accent-contrast: #ffffff;
+
+  --accent-ai: #8b5cf6;
+  --accent-ai-soft: rgba(139, 92, 246, 0.14);
+  --accent-ai-border: rgba(139, 92, 246, 0.36);
+
+  /* Semantic Status Tokens */
+  --status-success: #10b981;
+  --status-success-soft: rgba(16, 185, 129, 0.14);
+  --status-success-border: rgba(16, 185, 129, 0.32);
+
+  --status-warning: #f59e0b;
+  --status-warning-soft: rgba(245, 158, 11, 0.14);
+  --status-warning-border: rgba(245, 158, 11, 0.32);
+
+  --status-danger: #f43f5e;
+  --status-danger-soft: rgba(244, 63, 94, 0.14);
+  --status-danger-border: rgba(244, 63, 94, 0.32);
+
+  --status-info: #38bdf8;
+  --status-info-soft: rgba(56, 189, 248, 0.14);
+  --status-info-border: rgba(56, 189, 248, 0.32);
+
+  /* Focus, Elevation & Radii */
+  --focus-ring: #6366f1;
+  --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.36), 0 1px 2px -1px rgba(0, 0, 0, 0.32);
+  --radius-card: 0.75rem;
+  --radius-control: 0.5rem;
+
+  /* Font Stacks */
+  --font-sans: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  color-scheme: dark;
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  background-color: var(--bg-canvas);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
+:root[data-theme='light'] {
+  /* Core Surfaces */
+  --bg-canvas: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-elevated: #f1f5f9;
+  --bg-hover: #e2e8f0;
+  --bg-overlay: rgba(15, 23, 42, 0.45);
+
+  /* Typography Colors */
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+
+  /* Borders */
+  --border-subtle: rgba(15, 23, 42, 0.10);
+  --border-strong: rgba(15, 23, 42, 0.22);
+
+  /* Brand & AI Accents */
+  --accent-primary: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-soft: rgba(79, 70, 229, 0.10);
+  --accent-border: rgba(79, 70, 229, 0.28);
+  --accent-contrast: #ffffff;
+
+  --accent-ai: #7c3aed;
+  --accent-ai-soft: rgba(124, 58, 237, 0.10);
+  --accent-ai-border: rgba(124, 58, 237, 0.28);
+
+  /* Semantic Status Tokens */
+  --status-success: #059669;
+  --status-success-soft: rgba(5, 150, 105, 0.10);
+  --status-success-border: rgba(5, 150, 105, 0.28);
+
+  --status-warning: #d97706;
+  --status-warning-soft: rgba(217, 119, 6, 0.12);
+  --status-warning-border: rgba(217, 119, 6, 0.30);
+
+  --status-danger: #e11d48;
+  --status-danger-soft: rgba(225, 29, 72, 0.10);
+  --status-danger-border: rgba(225, 29, 72, 0.28);
+
+  --status-info: #0284c7;
+  --status-info-soft: rgba(2, 132, 199, 0.10);
+  --status-info-border: rgba(2, 132, 199, 0.28);
+
+  /* Focus & Elevation */
+  --focus-ring: #4f46e5;
+  --shadow-card: 0 1px 3px 0 rgba(15, 23, 42, 0.06), 0 1px 2px -1px rgba(15, 23, 42, 0.04);
+
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
 body {
   margin: 0;
+  padding: 0;
+  min-height: 100%;
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  overflow-x: hidden;
 }
 
 button,
+input,
+select,
+textarea,
 a {
   font: inherit;
 }
+
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+/* Accessible keyboard focus states */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Selection highlight */
+::selection {
+  background-color: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+/* Tabular numerals utility for metrics, timers, and scores */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Subtle scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-canvas);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 9999px;
+}
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+

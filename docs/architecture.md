@@ -170,6 +170,15 @@ Task 16 implements recommendation outcome tracking and next-session focus delta 
 3. **Synchronous Re-evaluability**: Re-evaluation occurs via endpoint invocation without requiring background workers, Celery, or scheduled jobs. Unanalyzed sessions remain `outcome_status="pending"` until ML analysis completes.
 4. **Non-Causal Observational Framing**: UI badges and documentation label focus changes as `"Observed next-session focus delta"` to prevent unfounded causal claims.
 
+## Interactive Counterfactual Explanations (Task 17)
+
+Task 17 implements interactive, bounded "what-if" counterfactual simulations on analyzed study sessions:
+
+1. **Deterministic Feature Recalculation**: Adjusts `productive_duration`, `distraction_duration`, `break_duration`, `activity_switch_count`, and `unique_application_count` within validated bounds and recomputes `total_session_duration`, `productive_activity_ratio`, and `distraction_activity_ratio` before re-running the Task 11 scikit-learn models (`ml_service.simulate_counterfactual`).
+2. **Strict Immutability**: Simulations execute via `POST /api/v1/student/behaviour/counterfactual` without modifying stored `StudySession`, `StudyActivity`, or `BehaviouralAnalysis` records.
+3. **Hypothetical Labeling & Non-Causal Summary**: Responses return `is_hypothetical: true`, baseline vs. simulated predictions, exact deltas, and a plain-language summary explicitly distinguishing hypothetical model projections from measured outcomes.
+4. **Student Ownership Isolation**: Enforces `require_student` and verifies `StudySession.student_id == current_user.student_id`, returning `404` for cross-student requests and `403` for parent accounts.
+
 
 
 

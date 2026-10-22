@@ -7,6 +7,8 @@ from app.core.auth import AuthenticatedUser, require_student
 from app.db.session import get_db
 from app.schemas.student import (
     BehaviourAnalysisResponse,
+    CounterfactualSimulationRequest,
+    CounterfactualSimulationResponse,
     PerformanceReportResponse,
     QuizCreate,
     QuizResponse,
@@ -17,6 +19,7 @@ from app.schemas.student import (
     RecommendationOutcomeCreate,
     RecommendationOutcomeResponse,
     RecommendationResponse,
+    RecommendationEffectivenessResponse,
     SessionActivitySummaryResponse,
     StudentDashboardResponse,
     StudyActivityCreate,
@@ -233,6 +236,24 @@ def list_behaviour(
     )
 
 
+@student_router.post(
+    "/behaviour/counterfactual",
+    response_model=CounterfactualSimulationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Run hypothetical what-if counterfactual simulation on a behavioural analysis",
+    description="Simulates bounded adjustments to session telemetry features using the trained ML models without modifying stored session or analysis records.",
+)
+def simulate_behaviour_counterfactual(
+    data: CounterfactualSimulationRequest,
+    current_user: AuthenticatedUser = Depends(require_student),
+    db: Session = Depends(get_db),
+) -> CounterfactualSimulationResponse:
+    result = student_service.run_session_counterfactual_simulation(
+        current_user.student_id, data, db  # type: ignore[arg-type]
+    )
+    return CounterfactualSimulationResponse(**result)
+
+
 @student_router.get(
     "/behaviour/{analysis_id}",
     response_model=BehaviourAnalysisResponse,
@@ -374,6 +395,22 @@ def get_latest_recommendation(
 
 
 @student_router.get(
+    "/recommendations/effectiveness",
+    response_model=RecommendationEffectivenessResponse,
+    summary="Retrieve recommendation effectiveness metrics and adaptive feedback status",
+    description="Calculates student-isolated empirical outcome signals, focus delta shifts, and ranking adjustments.",
+)
+def get_recommendations_effectiveness(
+    current_user: AuthenticatedUser = Depends(require_student),
+    db: Session = Depends(get_db),
+) -> RecommendationEffectivenessResponse:
+    res = recommendation_service.get_student_recommendations_effectiveness(
+        current_user.student_id, db  # type: ignore[arg-type]
+    )
+    return RecommendationEffectivenessResponse(**res)
+
+
+@student_router.get(
     "/recommendations/{recommendation_id}",
     response_model=RecommendationResponse,
     summary="Get a specific recommendation",
@@ -427,6 +464,12 @@ def record_outcome(
     status_code=status.HTTP_200_OK,
     summary="Record or update an intervention outcome by event_id",
     description="Stores recommendation_followed, delta_focus_next_session, and next session evaluation.",
+)
+@student_router.post(
+    "/recommendations/events/{event_id}/outcomes",
+    response_model=RecommendationOutcomeResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
 )
 def record_event_outcome(
     event_id: UUID,
